@@ -115,7 +115,7 @@ def draw_health_bars(frame, x, y, hp, mana, max_hp=MAX_HP, max_mana=MAX_MANA):
                   (x + bar_width + 5, y + bar_height * 2 + spacing + 5), (150, 150, 150), outline_thickness)
     
     # Mana text
-    cv2.putText(frame, f"Mana {mana}/{max_mana}", (x + 10, y + bar_height * 2 + spacing + 18),
+    cv2.putText(frame, f"Mana {mana}/{max_mana}", (x + 10, y + bar_height * 2 + spacing),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1)
 
 # =================== Fullscreen setup ===================
