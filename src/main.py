@@ -45,7 +45,7 @@ class PersonLabelAssigner:
             'green': 'friend',
             'yellow': 'romance target',
             'purple': 'enemy',
-            'black': 'enemy'
+            'black': 'friend'
         }
     
     def detect_dominant_color(self, frame, x1, y1, x2, y2):
