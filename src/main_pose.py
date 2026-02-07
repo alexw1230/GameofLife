@@ -72,6 +72,52 @@ def get_persistent_attributes(track_id, bbox, attributes_dict, threshold=PROXIMI
 
     return None, track_id
 
+def draw_health_bars(frame, x, y, hp, mana, max_hp=MAX_HP, max_mana=MAX_MANA):
+    """Draw RPG-style health and mana bars."""
+    bar_width = 150
+    bar_height = 20
+    spacing = 5
+    outline_thickness = 2
+    
+    # Background panel
+    panel_height = bar_height * 2 + spacing * 3
+    panel_width = bar_width + 30
+    cv2.rectangle(frame, (x - 10, y - 10), (x + panel_width, y + panel_height), (20, 20, 20), -1)
+    cv2.rectangle(frame, (x - 10, y - 10), (x + panel_width, y + panel_height), (100, 100, 100), outline_thickness)
+    
+    # HP Bar
+    hp_ratio = max(0, min(hp / max_hp, 1.0))
+    hp_bar_width = int(bar_width * hp_ratio)
+    
+    # HP background (dark red)
+    cv2.rectangle(frame, (x + 5, y + 5), (x + bar_width + 5, y + bar_height + 5), (50, 50, 100), -1)
+    # HP fill (bright red)
+    cv2.rectangle(frame, (x + 5, y + 5), (x + 5 + hp_bar_width, y + bar_height + 5), (0, 0, 255), -1)
+    # HP border
+    cv2.rectangle(frame, (x + 5, y + 5), (x + bar_width + 5, y + bar_height + 5), (150, 150, 150), outline_thickness)
+    
+    # HP text
+    cv2.putText(frame, f"HP {hp}/{max_hp}", (x + 10, y + 18),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1)
+    
+    # Mana Bar
+    mana_ratio = max(0, min(mana / max_mana, 1.0))
+    mana_bar_width = int(bar_width * mana_ratio)
+    
+    # Mana background (dark blue)
+    cv2.rectangle(frame, (x + 5, y + bar_height + spacing + 5), 
+                  (x + bar_width + 5, y + bar_height * 2 + spacing + 5), (100, 50, 50), -1)
+    # Mana fill (bright blue)
+    cv2.rectangle(frame, (x + 5, y + bar_height + spacing + 5), 
+                  (x + 5 + mana_bar_width, y + bar_height * 2 + spacing + 5), (255, 0, 0), -1)
+    # Mana border
+    cv2.rectangle(frame, (x + 5, y + bar_height + spacing + 5), 
+                  (x + bar_width + 5, y + bar_height * 2 + spacing + 5), (150, 150, 150), outline_thickness)
+    
+    # Mana text
+    cv2.putText(frame, f"Mana {mana}/{max_mana}", (x + 10, y + bar_height * 2 + spacing + 18),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1)
+
 # =================== Fullscreen setup ===================
 cv2.namedWindow("YOLOv8 RPG View", cv2.WINDOW_NORMAL)
 cv2.setWindowProperty("YOLOv8 RPG View", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
@@ -129,11 +175,10 @@ while cap.isOpened():
             # Draw bounding box
             cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
 
-            # Draw RPG-style attributes
-            cv2.putText(frame, f"HP: {hp}", (x2 + 10, y1 + 20),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-            cv2.putText(frame, f"Mana: {mana}", (x2 + 10, y1 + 45),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+            # Draw RPG-style health and mana bars above the person
+            bar_x = (x1 + x2) // 2 - 75  # Center horizontally (bar_width/2 = 75)
+            bar_y = max(10, y1 - 70)  # Above the person, with safety margin
+            draw_health_bars(frame, bar_x, bar_y, hp, mana)
 
     cv2.imshow("YOLOv8 RPG View", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
