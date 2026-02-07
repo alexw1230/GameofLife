@@ -64,6 +64,43 @@ JOB_COLORS = {
     'Farmer': (34, 139, 34),       # Dark Green
 }
 
+# =================== MOUSE INTERACTION GLOBALS ===================
+# We need these so the mouse listener knows what's happening in the main loop
+latest_frame = None
+click_regions = []  # Will store tuples: (x1, y1, x2, y2, track_id)
+
+def mouse_callback(event, x, y, flags, param):
+    """Handles mouse clicks on the video window."""
+    global latest_frame, click_regions
+    
+    # Trigger only on Left Mouse Button Click (LBUTTONDOWN)
+    if event == cv2.EVENT_LBUTTONDOWN:
+        
+        # Check if the click (x, y) is inside any of the detected boxes
+        for (x1, y1, x2, y2, track_id) in click_regions:
+            if x1 < x < x2 and y1 < y < y2:
+                print(f"✅ Clicked on Person ID: {track_id}")
+                
+                if latest_frame is not None:
+                    # --- TAKE THE SCREENSHOT (CROP) ---
+                    # Ensure we don't crop outside the image
+                    h, w, _ = latest_frame.shape
+                    crop_x1, crop_y1 = max(0, x1), max(0, y1)
+                    crop_x2, crop_y2 = min(w, x2), min(h, y2)
+                    
+                    person_crop = latest_frame[crop_y1:crop_y2, crop_x1:crop_x2]
+                    
+                    # --- OPEN THE NEW WINDOW ---
+                    if person_crop.size > 0:
+                        window_name = f"Profile: Person {track_id}"
+                        cv2.imshow(window_name, person_crop)
+                        print(f"   -> Opened window: {window_name}")
+                return # Stop checking after finding the first match
+
+
+
+
+
 # =================== Persistent attributes ===================
 # track_id -> {'hp': HP, 'mana': Mana, 'job': job, 'bbox': (x1,y1,x2,y2), 'upper_bbox': (...), ...}
 person_attributes = {}
@@ -319,6 +356,7 @@ def main():
     # Fullscreen window for display
     cv2.namedWindow("YOLOv8 RPG View", cv2.WINDOW_NORMAL)
     cv2.setWindowProperty("YOLOv8 RPG View", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+    cv2.setMouseCallback("YOLOv8 RPG View", mouse_callback)
 
     import time
 
@@ -326,11 +364,20 @@ def main():
     # matched_id -> {'first_seen': timestamp, 'last_seen': timestamp, 'bbox': (x1,y1,x2,y2)}
     pending_seen: dict = {}
 
+    # Access globals
+    global latest_frame, click_regions
+
     try:
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
+
+            # === NEW: UPDATE GLOBAL FRAME ===
+            latest_frame = frame.copy() # Save a clean copy for the screenshot
+            
+            # === NEW: RESET CLICK REGIONS FOR THIS FRAME ===
+            current_frame_regions = []
 
             results = det_model.track(frame, persist=True, classes=[0], conf=0.4, tracker="bytetrack.yaml",verbose=False)
 
@@ -451,6 +498,9 @@ def main():
                             # no longer pending
                             pending_seen.pop(key_id, None)
 
+                    # === NEW: ADD BOX TO CLICKABLE REGIONS ===
+                    # We store the coordinates and ID so the mouse can find them
+                    current_frame_regions.append((x1, y1, x2, y2, int(track_id)))
 
                     # Draw bounding box (use different color if still pending)
                     if matched_id in person_attributes:
@@ -487,6 +537,10 @@ def main():
                     else:
                         # pending detection (not yet assigned) - draw gray box
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (200, 200, 200), 2)
+
+            # === NEW: PUBLISH REGIONS TO GLOBAL ===
+            # Update the global list so the mouse callback sees the latest positions
+            click_regions = current_frame_regions
 
             # Cleanup pending_seen entries that haven't been updated recently
             stale_pending = [pid for pid, info in pending_seen.items() if (time.time() - info.get('last_seen', info.get('first_seen', 0))) > pending_timeout]
