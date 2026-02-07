@@ -236,12 +236,20 @@ def get_persistent_attributes(track_id, bbox, attributes_dict, threshold=PROXIMI
     return None, track_id
 
 
-def draw_health_bars(frame: np.ndarray, x: int, y: int, hp: int, mana: int, max_hp=MAX_HP, max_mana=MAX_MANA):
-    """Draw RPG-style health and mana bars at (x,y) top-left of panel."""
-    bar_width = 150
-    bar_height = 20
+def draw_health_bars(frame: np.ndarray, x: int, y: int, hp: int, mana: int, max_hp=MAX_HP, max_mana=MAX_MANA, scale: float = 1.0):
+    """Draw RPG-style health and mana bars at (x,y) top-left of panel, scaled by `scale`.
+
+    `scale` is clamped so bars remain readable. Use `scale` in (0.5..1.0].
+    """
+    # Base sizes (when scale == 1.0)
+    base_bar_width = 150
+    base_bar_height = 20
     spacing = 5
-    outline_thickness = 2
+    outline_thickness = max(1, int(2 * scale))
+
+    # Apply scale but ensure minimum sizes
+    bar_width = max(40, int(base_bar_width * scale))
+    bar_height = max(8, int(base_bar_height * scale))
 
     panel_height = bar_height * 2 + spacing * 3
     panel_width = bar_width + 30
@@ -256,7 +264,9 @@ def draw_health_bars(frame: np.ndarray, x: int, y: int, hp: int, mana: int, max_
     cv2.rectangle(frame, (x + 5, y + 5), (x + bar_width + 5, y + bar_height + 5), (50, 50, 100), -1)
     cv2.rectangle(frame, (x + 5, y + 5), (x + 5 + hp_bar_width, y + bar_height + 5), (0, 0, 255), -1)
     cv2.rectangle(frame, (x + 5, y + 5), (x + bar_width + 5, y + bar_height + 5), (150, 150, 150), outline_thickness)
-    cv2.putText(frame, f"HP {hp}/{max_hp}", (x + 10, y + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1)
+
+    font_scale = max(0.3, 0.4 * scale)
+    cv2.putText(frame, f"HP {hp}/{max_hp}", (x + 10, y + 5 + int(bar_height * 0.9)), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), max(1, int(scale)))
 
     # Mana
     mana_ratio = max(0.0, min(float(mana) / float(max_mana), 1.0))
@@ -264,7 +274,7 @@ def draw_health_bars(frame: np.ndarray, x: int, y: int, hp: int, mana: int, max_
     cv2.rectangle(frame, (x + 5, y + bar_height + spacing + 5), (x + bar_width + 5, y + bar_height * 2 + spacing + 5), (100, 50, 50), -1)
     cv2.rectangle(frame, (x + 5, y + bar_height + spacing + 5), (x + 5 + mana_bar_width, y + bar_height * 2 + spacing + 5), (255, 0, 0), -1)
     cv2.rectangle(frame, (x + 5, y + bar_height + spacing + 5), (x + bar_width + 5, y + bar_height * 2 + spacing + 5), (150, 150, 150), outline_thickness)
-    cv2.putText(frame, f"Mana {mana}/{max_mana}", (x + 10, y + bar_height * 2 + spacing), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1)
+    cv2.putText(frame, f"Mana {mana}/{max_mana}", (x + 10, y + bar_height + spacing + int(bar_height * 0.95)), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), max(1, int(scale)))
 
 
 def main():
@@ -301,12 +311,21 @@ def main():
 
     det_model = YOLO("models/yolov8n.pt")
 
+    # Load dragon image once
+    dragon_img = None
+    dragon_path = os.path.join(os.path.dirname(__file__), '..', 'dragon.jpeg')
+    if os.path.exists(dragon_path):
+        dragon_img = cv2.imread(dragon_path, cv2.IMREAD_UNCHANGED)
+        if dragon_img is not None and dragon_img.shape[2] == 4:
+            # Convert to BGR if alpha channel present
+            dragon_img = cv2.cvtColor(dragon_img, cv2.COLOR_BGRA2BGR)
+
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         print("Error: Could not open webcam")
         return
 
-    # Fullscreen window for display
+    # Fullscreen window for display (restore correct setup)
     cv2.namedWindow("YOLOv8 RPG View", cv2.WINDOW_NORMAL)
     cv2.setWindowProperty("YOLOv8 RPG View", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
@@ -317,13 +336,16 @@ def main():
     pending_seen: dict = {}
 
     try:
+        boss_id = None
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
 
-            results = det_model.track(frame, persist=True, classes=[0], conf=0.4, tracker="bytetrack.yaml")
+            results = det_model.track(frame, persist=True, classes=[0], conf=0.4, tracker="bytetrack.yaml",verbose=False)
 
+            # Collect UI info for this frame so we can determine the largest hitbox (Boss)
+            current_frame_ui: dict = {}
             for r in results:
                 if r.boxes.id is None:
                     continue
@@ -454,17 +476,103 @@ def main():
                         if stored is not None:
                             disp_hp = int(stored.get('hp', 0))
                             disp_mana = int(stored.get('mana', 0))
-                            # Draw health/mana bars
-                            bar_x = (x1 + x2) // 2 - 75
-                            bar_y = max(10, y1 - 70)
-                            draw_health_bars(frame, bar_x, bar_y, disp_hp, disp_mana)
-                            # Draw job name above HP/Mana bars
-                            job_text = f"{job}"
-                            cv2.putText(frame, job_text, (x1 + 5, max(20, y1 - 90)), 
-                                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, job_color, 2)
+                            # Compute scaling based on bbox height vs expected pixel height at ref distance
+                            expected_px_ref = expected_pixel_height(ref_distance_cfg)
+                            raw_scale = 1.0
+                            if expected_px_ref > 0:
+                                raw_scale = float(full_height) / float(expected_px_ref)
+                            # effective scale clamps to [0.5, 1.0]
+                            eff_scale = max(0.5, min(1.0, raw_scale))
+
+                            # Center the bars relative to bbox and scale positions
+                            bar_x = (x1 + x2) // 2 - int(75 * eff_scale)
+                            bar_y = max(10, y1 - int(70 * eff_scale))
+                            draw_health_bars(frame, bar_x, bar_y, disp_hp, disp_mana, scale=eff_scale)
+
+                            # Save UI positions and measurements for post-pass boss detection
+                            current_frame_ui[matched_id] = {
+                                'bar_x': bar_x,
+                                'bar_y': bar_y,
+                                'job_color': job_color,
+                                'eff_scale': eff_scale,
+                                'raw_scale': raw_scale,
+                                'bbox': (x1, y1, x2, y2),
+                                'full_height': full_height,
+                                'job': job,
+                            }
+
+                            # Draw job name above HP/Mana bars only if raw_scale >= 0.5 and not Boss
+                            if raw_scale >= 0.5 and matched_id != boss_id:
+                                job_text = f"{job}"
+                                font_scale = max(0.3, 0.6 * eff_scale)
+                                thickness = max(1, int(2 * eff_scale))
+                                cv2.putText(frame, job_text, (x1 + 5, max(20, y1 - int(90 * eff_scale))),
+                                           cv2.FONT_HERSHEY_SIMPLEX, font_scale, job_color, thickness)
                     else:
                         # pending detection (not yet assigned) - draw gray box
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (200, 200, 200), 2)
+
+            # Determine Boss (largest hitbox) for this frame and draw Boss overlay
+            boss_id = None
+            if current_frame_ui:
+                # Pick the matched_id with largest full_height
+                boss_id = max(current_frame_ui.items(), key=lambda kv: kv[1].get('full_height', 0))[0]
+                boss_info = current_frame_ui.get(boss_id)
+                if boss_info:
+                    bx1, by1, bx2, by2 = boss_info.get('bbox', (0, 0, 0, 0))
+                    eff_scale = boss_info.get('eff_scale', 1.0)
+                    raw_scale = boss_info.get('raw_scale', 1.0)
+                    bar_x = boss_info.get('bar_x', 0)
+                    bar_y = boss_info.get('bar_y', 0)
+                    job_color = boss_info.get('job_color', (0, 0, 255))
+
+                    # Draw a thicker bounding box for the Boss
+                    cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 0, 255), max(3, int(3 * eff_scale)))
+
+                    # Draw dragon image and Boss title if raw_scale >= 0.5
+                    if raw_scale >= 0.5:
+                        panel_bar_w = max(40, int(150 * eff_scale))
+                        panel_w = panel_bar_w + 30
+                        panel_bar_h = max(8, int(20 * eff_scale))
+                        panel_h = panel_bar_h * 2 + 5 * 3
+
+                        # Dragon image to the right of panel
+                        if dragon_img is not None:
+                            # Resize dragon to fit panel height
+                            d_h = panel_h
+                            d_w = int(dragon_img.shape[1] * (d_h / dragon_img.shape[0]))
+                            dragon_resized = cv2.resize(dragon_img, (d_w, d_h), interpolation=cv2.INTER_AREA)
+                            # Compute position
+                            dragon_x = bar_x + panel_w + 8
+                            dragon_y = bar_y
+                            # Overlay dragon image (handle boundaries)
+                            y1 = max(0, dragon_y)
+                            y2 = min(frame.shape[0], y1 + d_h)
+                            x1 = max(0, dragon_x)
+                            x2 = min(frame.shape[1], x1 + d_w)
+                            # Only overlay if region fits
+                            if (y2 > y1) and (x2 > x1):
+                                roi = frame[y1:y2, x1:x2]
+                                # If dragon_resized has alpha, blend; else direct paste
+                                if dragon_resized.shape[2] == 4:
+                                    # Blend alpha
+                                    alpha = dragon_resized[:, :, 3] / 255.0
+                                    for c in range(3):
+                                        roi[:, :, c] = (1 - alpha) * roi[:, :, c] + alpha * dragon_resized[:, :, c]
+                                else:
+                                    roi[:] = dragon_resized[:roi.shape[0], :roi.shape[1], :3]
+                        else:
+                            # Fallback: draw dragon text
+                            dragon_x = bar_x + panel_w + 8
+                            dragon_y = bar_y + panel_h // 2 + int(6 * eff_scale)
+                            cv2.putText(frame, "DRAGON", (dragon_x, dragon_y), cv2.FONT_HERSHEY_SIMPLEX, max(0.5, 0.6 * eff_scale), (0, 140, 255), max(1, int(2 * eff_scale)))
+
+                        # Display Boss title with person's job (e.g., 'Boss - Mage') above the bars
+                        boss_job = boss_info.get('job', 'Unknown')
+                        boss_title = f"Boss - {boss_job}"
+                        boss_text_x = bx1 + 5
+                        boss_text_y = max(20, by1 - int(90 * eff_scale))
+                        cv2.putText(frame, boss_title, (boss_text_x, boss_text_y), cv2.FONT_HERSHEY_SIMPLEX, max(0.4, 0.6 * eff_scale), (0, 215, 255), max(1, int(2 * eff_scale)))
 
             # Cleanup pending_seen entries that haven't been updated recently
             stale_pending = [pid for pid, info in pending_seen.items() if (time.time() - info.get('last_seen', info.get('first_seen', 0))) > pending_timeout]
@@ -482,7 +590,9 @@ def main():
                 person_attributes.pop(pid, None)
 
             cv2.imshow("YOLOv8 RPG View", frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            # Correct quit logic: waitKey returns int, mask with 0xFF
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q'):
                 break
     finally:
         cap.release()
