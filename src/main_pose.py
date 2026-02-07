@@ -3,8 +3,8 @@ import numpy as np
 from ultralytics import YOLO
 
 # Models
-det_model = YOLO("yolov8n.pt")        # detection + tracking
-pose_model = YOLO("yolov8n-pose.pt")  # pose estimation
+det_model = YOLO("models/yolov8n.pt")        # detection + tracking
+pose_model = YOLO("models/yolov8n-pose.pt")  # pose estimation
 
 cap = cv2.VideoCapture(0)
 
