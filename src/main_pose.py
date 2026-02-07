@@ -7,7 +7,8 @@ det_model = YOLO("models/yolov8n.pt")        # detection + tracking
 pose_model = YOLO("models/yolov8n-pose.pt")  # pose estimation
 
 cap = cv2.VideoCapture(0)
-
+cv2.namedWindow("YOLOv8 Threat Detection", cv2.WINDOW_NORMAL)
+cv2.setWindowProperty("YOLOv8 Threat Detection", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 # Distance calibration constant (tune this!)
 KNOWN_HEIGHT = 1.7   # meters (average human)
 FOCAL_LENGTH = 700   # arbitrary constant
@@ -92,7 +93,7 @@ while cap.isOpened():
                     2
                 )
 
-    cv2.imshow("YOLOv8 Person Attributes", frame)
+    cv2.imshow("YOLOv8 Threat Detection", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
