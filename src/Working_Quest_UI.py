@@ -167,5 +167,7 @@ while cap.isOpened():
     elif key == ord('r'): # Press 'R' to shuffle quest
         quest_sys.refresh_side_quest()
 
+#deltethis
+
 cap.release()
 cv2.destroyAllWindows()
