@@ -3,8 +3,5 @@ opencv-python>=4.8.0
 numpy>=1.24.0
 torch>=2.0.0
 torchvision>=0.15.0
-<<<<<<< HEAD
-=======
 deepface
 tf-keras
->>>>>>> f0c8035dbcd42f7cb3262bf9bdda6983786adf96
