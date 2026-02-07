@@ -95,7 +95,7 @@ def main():
     """Main function to run real-time person detection and labeling."""
     
     # Load YOLOv8 model
-    model = YOLO('yolov8n.pt')  # nano model for faster inference
+    model = YOLO('models/yolov8n.pt')  # nano model for faster inference
     
     # Initialize webcam
     cap = cv2.VideoCapture(0)
