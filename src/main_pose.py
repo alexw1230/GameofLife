@@ -3,10 +3,8 @@ import numpy as np
 from ultralytics import YOLO
 
 # =================== Models ===================
-det_model = YOLO("models/yolov8n.pt")        # detection + tracking
-pose_model = YOLO("models/yolov8n-pose.pt")  # optional, for pose info
-
-cap = cv2.VideoCapture(0)
+# Models and VideoCapture are initialized inside main() to avoid
+# running side-effects on import (cleaner for testing/importing).
 
 # =================== Constants ===================
 KNOWN_HEIGHT = 1.7  # meters (average person)
@@ -118,71 +116,83 @@ def draw_health_bars(frame, x, y, hp, mana, max_hp=MAX_HP, max_mana=MAX_MANA):
     cv2.putText(frame, f"Mana {mana}/{max_mana}", (x + 10, y + bar_height * 2 + spacing),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1)
 
-# =================== Fullscreen setup ===================
-cv2.namedWindow("YOLOv8 RPG View", cv2.WINDOW_NORMAL)
-cv2.setWindowProperty("YOLOv8 RPG View", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+def main():
+    """Initialize models, camera and run the detection loop."""
+    det_model = YOLO("models/yolov8n.pt")        # detection + tracking
+    pose_model = YOLO("models/yolov8n-pose.pt")  # optional, for pose info
 
-# =================== Main loop ===================
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        break
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("Error: Could not open webcam")
+        return
 
-    # Run detection + tracking
-    results = det_model.track(
-        frame,
-        persist=True,
-        classes=[0],  # only people
-        conf=0.4,
-        tracker="bytetrack.yaml"
-    )
+    # Fullscreen window for display
+    cv2.namedWindow("YOLOv8 RPG View", cv2.WINDOW_NORMAL)
+    cv2.setWindowProperty("YOLOv8 RPG View", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
-    for r in results:
-        if r.boxes.id is None:
-            continue
+    try:
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-        for box, track_id in zip(r.boxes, r.boxes.id):
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            bbox_height = y2 - y1
-            distance = estimate_distance(bbox_height)
-            if distance is None:
-                continue
+            # Run detection + tracking
+            results = det_model.track(
+                frame,
+                persist=True,
+                classes=[0],  # only people
+                conf=0.4,
+                tracker="bytetrack.yaml"
+            )
 
-            # =================== Persistent HP/Mana ===================
-            attr, matched_id = get_persistent_attributes(track_id, (x1, y1, x2, y2), person_attributes)
-            if attr:
-                hp, mana = attr
-            else:
-                # First time seeing this person
-                person_crop = frame[y1:y2, x1:x2]
-                if person_crop.size == 0:
+            for r in results:
+                if r.boxes.id is None:
                     continue
-                h = person_crop.shape[0]
-                upper = person_crop[:h//2, :]
-                upper_color = dominant_color(upper)
 
-                hp = size_to_hp(bbox_height, distance)
-                mana = color_to_mana(upper_color)
+                for box, track_id in zip(r.boxes, r.boxes.id):
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    bbox_height = y2 - y1
+                    distance = estimate_distance(bbox_height)
+                    if distance is None:
+                        continue
 
-            # Update dictionary with current bbox
-            person_attributes[matched_id] = {'hp': hp, 'mana': mana, 'bbox': (x1, y1, x2, y2)}
+                    # Persistent HP/Mana
+                    attr, matched_id = get_persistent_attributes(track_id, (x1, y1, x2, y2), person_attributes)
+                    if attr:
+                        hp, mana = attr
+                    else:
+                        person_crop = frame[y1:y2, x1:x2]
+                        if person_crop.size == 0:
+                            continue
+                        h = person_crop.shape[0]
+                        upper = person_crop[:h//2, :]
+                        upper_color = dominant_color(upper)
 
-            # =================== Threat logic ===================
-            size_factor = bbox_height / distance
-            threat = size_factor > THREAT_THRESHOLD
-            box_color = (0, 0, 255) if threat else (0, 255, 0)
+                        hp = size_to_hp(bbox_height, distance)
+                        mana = color_to_mana(upper_color)
 
-            # Draw bounding box
-            cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
+                    # Update attributes
+                    person_attributes[matched_id] = {'hp': hp, 'mana': mana, 'bbox': (x1, y1, x2, y2)}
 
-            # Draw RPG-style health and mana bars above the person
-            bar_x = (x1 + x2) // 2 - 75  # Center horizontally (bar_width/2 = 75)
-            bar_y = max(10, y1 - 70)  # Above the person, with safety margin
-            draw_health_bars(frame, bar_x, bar_y, hp, mana)
+                    # Threat logic and drawing
+                    size_factor = bbox_height / distance
+                    threat = size_factor > THREAT_THRESHOLD
+                    box_color = (0, 0, 255) if threat else (0, 255, 0)
 
-    cv2.imshow("YOLOv8 RPG View", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
 
-cap.release()
-cv2.destroyAllWindows()
+                    # Draw RPG-style health and mana bars above the person
+                    bar_x = (x1 + x2) // 2 - 75  # Center horizontally (bar_width/2 = 75)
+                    bar_y = max(10, y1 - 70)  # Above the person, with safety margin
+                    draw_health_bars(frame, bar_x, bar_y, hp, mana)
+
+            cv2.imshow("YOLOv8 RPG View", frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
+
+
+if __name__ == '__main__':
+    main()
