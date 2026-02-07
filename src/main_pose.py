@@ -274,7 +274,7 @@ def draw_health_bars(frame: np.ndarray, x: int, y: int, hp: int, mana: int, max_
     cv2.rectangle(frame, (x + 5, y + bar_height + spacing + 5), (x + bar_width + 5, y + bar_height * 2 + spacing + 5), (100, 50, 50), -1)
     cv2.rectangle(frame, (x + 5, y + bar_height + spacing + 5), (x + 5 + mana_bar_width, y + bar_height * 2 + spacing + 5), (255, 0, 0), -1)
     cv2.rectangle(frame, (x + 5, y + bar_height + spacing + 5), (x + bar_width + 5, y + bar_height * 2 + spacing + 5), (150, 150, 150), outline_thickness)
-    cv2.putText(frame, f"Mana {mana}/{max_mana}", (x + 10, y + bar_height * 2 + spacing + int(bar_height * 0.9)), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), max(1, int(scale)))
+    cv2.putText(frame, f"Mana {mana}/{max_mana}", (x + 10, y + bar_height + spacing + int(bar_height * 0.95)), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), max(1, int(scale)))
 
 
 def main():
