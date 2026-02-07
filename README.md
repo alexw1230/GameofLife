@@ -96,17 +96,19 @@ Or adjust color detection ranges by modifying the `color_ranges` dictionary.
 
 **Slow performance**: 
 - Use a smaller model or reduce frame resolution
-## YOLOv8 Person Detection with RPG-style HP/Mana Overlay
+## YOLOv8 Person Detection with Labels, HP, and Mana
 
-Real-time webcam app that detects people, analyzes their upper-body clothing color, and assigns simple RPG-style HP and Mana values which are displayed as bars above each person.
+Real-time webcam app that detects people, analyzes upper-body clothing color to assign labels (enemy, friend, romance target), and displays RPG-style HP and Mana bars.
 
 ## Features
 
 - Real-time person detection using YOLOv8 (Ultralytics)
-- Upper-body color analysis (dominant color) → Mana mapping
+- Upper-body color analysis → assign labels (enemy or friend, with 15% chance of romance target override)
 - HP derived from size (reference-distance normalization)
-- Pending assignment: a person must be visible for `pending_timeout` seconds before HP/Mana are committed
+- Mana derived from dominant color brightness
+- Pending assignment: a person must be visible for `pending_timeout` seconds before HP/Mana/label are committed
 - Persistent per-person attributes across short occlusions (IoU/proximity matching)
+- Color-coded bounding boxes and labels
 
 ## Installation
 
@@ -120,7 +122,7 @@ pip install -r requirements.txt
 
 ## Usage
 
-Run the main pose/detection script:
+Run the main detection script:
 
 ```bash
 python src/main_pose.py
@@ -140,23 +142,51 @@ The application reads `config.yaml` by default. Key options:
 
 Example `config.yaml` is included in the repo.
 
+## Job Assignment System
+
+The app assigns one of 11 jobs based on HP and Mana values:
+
+### Jobs with HP/Mana Requirements
+
+- **Tank**: HP > 80 (Blue box)
+- **Warrior**: HP > 65 and Mana > 30 (Red box)
+- **Warlock**: HP > 65 and Mana > 60 (Magenta box)
+- **Mage**: HP < 30 and Mana > 75 (Cyan box)
+- **Healer**: HP < 30 and Mana > 75 (Green box) *(same as Mage, Mage checked first)*
+- **Muggle**: Mana < 10 (Gray box)
+
+### Jobs for Non-Matching Archetypes (Randomly Assigned)
+
+- **Commoner** (Brown box)
+- **Blacksmith** (Orange box)
+- **Noble** (Gold box)
+- **Baker** (Tan box)
+- **Farmer** (Dark Green box)
+
+Anyone not fitting the above requirements gets a random job from the non-matching list.
+
 ## Requirements
 
 - Python 3.8+
-- Dependencies (in `requirements.txt`): `ultralytics`, `opencv-python`, `numpy`, `PyYAML`, `torch` (install matches your platform/CUDA if desired)
+- Dependencies (in `requirements.txt`): `ultralytics`, `opencv-python`, `numpy`, `PyYAML`, `torch`
 
 ## How It Works (brief)
 
 1. YOLOv8 detects people and provides tracked boxes.
 2. For unmatched detections, the app starts a pending timer (configured by `pending_timeout`).
-3. While pending, a gray box and provisional bars/countdown are shown.
-4. After the timeout, the upper-body region is analyzed for dominant color and size; HP and Mana are computed and committed.
-5. Committed HP/Mana are displayed above the person and persisted until the person is forgotten (`person_timeout`).
+3. While pending, a gray box is shown.
+4. After the timeout, compute:
+  - **HP**: derived from person size (reference-distance normalization)
+  - **Mana**: derived from upper-body color brightness
+5. **Job Assignment**:
+  - Check if HP/Mana match any requirement (Tank, Warrior, Warlock, Mage, Healer, Muggle)
+  - If match found, assign that job
+  - Otherwise, randomly pick from: Commoner, Blacksmith, Noble, Baker, Farmer
+6. Job, HP, and Mana are displayed above the person until they are forgotten (`person_timeout`).
 
 ## Troubleshooting & Tips
 
 - If HP values are too small/large, tweak `hp_scale` in `config.yaml`.
-- Increase `pending_timeout` if people move quickly and you get mistaken assignments.
+- Increase `pending_timeout` if people move quickly and you get mistaken label assignments.
 - Ensure good lighting for reliable color detection.
-
-If you want, I can add an example command to run with a custom config or adjust the default `pending_timeout` for faster assignment.
+- Adjust HSV color ranges in the code (HSV_COLOR_RANGES) if clothing colors are not detected correctly.

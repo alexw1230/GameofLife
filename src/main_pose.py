@@ -1,5 +1,6 @@
 import argparse
 import os
+import random
 import cv2
 import numpy as np
 from ultralytics import YOLO
@@ -18,8 +19,53 @@ THREAT_THRESHOLD = 0.6  # ratio threshold (upper_height / expected_px_at_ref_dis
 PROXIMITY_THRESHOLD = 50  # pixels, for matching old track
 SMOOTHING_ALPHA = 0.6  # EMA weight for new measurements (0..1)
 
+# HSV color ranges for clothing classification
+HSV_COLOR_RANGES = {
+    'red': {
+        'lower1': np.array([0, 100, 100]),
+        'upper1': np.array([10, 255, 255]),
+        'lower2': np.array([170, 100, 100]),
+        'upper2': np.array([180, 255, 255])
+    },
+    'blue': {
+        'lower': np.array([100, 100, 100]),
+        'upper': np.array([130, 255, 255])
+    },
+    'green': {
+        'lower': np.array([40, 100, 100]),
+        'upper': np.array([80, 255, 255])
+    },
+    'yellow': {
+        'lower': np.array([20, 100, 100]),
+        'upper': np.array([40, 255, 255])
+    },
+    'purple': {
+        'lower': np.array([130, 100, 100]),
+        'upper': np.array([160, 255, 255])
+    },
+    'black': {
+        'lower': np.array([0, 0, 0]),
+        'upper': np.array([180, 100, 50])
+    }
+}
+
+# Job colors for visualization
+JOB_COLORS = {
+    'Tank': (255, 0, 0),          # Blue
+    'Warrior': (0, 0, 255),        # Red
+    'Warlock': (255, 0, 255),      # Magenta
+    'Mage': (255, 255, 0),         # Cyan
+    'Healer': (0, 255, 0),         # Green
+    'Muggle': (128, 128, 128),     # Gray
+    'Commoner': (165, 42, 42),     # Brown
+    'Blacksmith': (0, 165, 255),   # Orange
+    'Noble': (0, 215, 255),        # Gold
+    'Baker': (180, 105, 105),      # Tan
+    'Farmer': (34, 139, 34),       # Dark Green
+}
+
 # =================== Persistent attributes ===================
-# track_id -> {'hp': HP, 'mana': Mana, 'bbox': (x1,y1,x2,y2), 'upper_bbox': (...)}
+# track_id -> {'hp': HP, 'mana': Mana, 'job': job, 'bbox': (x1,y1,x2,y2), 'upper_bbox': (...), ...}
 person_attributes = {}
 
 
@@ -44,6 +90,50 @@ def dominant_color(img: np.ndarray) -> tuple[int, int, int]:
         10, cv2.KMEANS_RANDOM_CENTERS,
     )
     return tuple(map(int, centers[0]))
+
+
+def assign_job(hp: int, mana: int) -> str:
+    """Assign a job based on HP and Mana requirements.
+
+    If multiple requirement-based jobs match, randomly pick one of them.
+    There's a 15% chance to instead drop to a random fallback job even when
+    requirement-matching jobs exist.
+
+    Requirement-based jobs:
+    - Tank: HP > 80
+    - Warlock: HP > 65 and Mana > 60
+    - Warrior: HP > 65 and Mana > 30
+    - Mage: HP < 30 and Mana > 75
+    - Healer: HP < 30 and Mana > 75 (same requirements as Mage)
+    - Muggle: Mana < 10
+
+    Fallback jobs (random): Commoner, Blacksmith, Noble, Baker, Farmer
+    """
+    fallbacks = ['Commoner', 'Blacksmith', 'Noble', 'Baker', 'Farmer']
+
+    matches: list[str] = []
+    if hp >= 65:
+        matches.append('Tank')
+    if hp >= 50 and mana >= 50:
+        matches.append('Warlock')
+    if hp >= 50 and mana >= 30:
+        matches.append('Warrior')
+    if hp <= 30 and mana >= 50:
+        # Both Mage and Healer share these requirements
+        matches.append('Mage')
+        matches.append('Healer')
+    if mana <= 10:
+        matches.append('Muggle')
+
+    # If there are matches, choose among them, but with 15% chance pick a fallback
+    if matches:
+        if random.random() < 0.15:
+            return random.choice(fallbacks)
+        return random.choice(matches)
+
+    # No requirement matches: pick a fallback job
+    return random.choice(fallbacks)
+
 
 
 def color_to_mana(rgb: tuple[int, int, int]) -> int:
@@ -326,13 +416,17 @@ def main():
                             if person_upper_crop is None or person_upper_crop.size == 0:
                                 # can't measure now; continue and wait for next frame
                                 continue
-                            upper_color = dominant_color(person_upper_crop)
+                            # Compute HP from size and Mana from brightness
                             hp = size_to_hp(upper_height, distance, ref_distance=ref_distance_cfg, scale=hp_scale)
-                            mana = color_to_mana(upper_color)
+                            dominant_bgr = dominant_color(person_upper_crop)
+                            mana = color_to_mana(dominant_bgr)
+                            # Assign job based on HP/Mana requirements
+                            job = assign_job(hp, mana)
 
                             person_attributes[key_id] = {
                                 'hp': hp,
                                 'mana': mana,
+                                'job': job,
                                 'bbox': (x1, y1, x2, y2),
                                 'upper_bbox': (x1, y1, x2, upper_y2),
                                 'first_seen': pending_seen[key_id]['first_seen'],
@@ -342,25 +436,27 @@ def main():
                             # no longer pending
                             pending_seen.pop(key_id, None)
 
-                    # Threat logic using normalized size ratio vs reference distance
-                    # Compute expected pixel height at reference distance and compare
-                    ref_distance = 2.0
-                    expected_px_ref = expected_pixel_height(ref_distance)
-                    size_ratio = float(upper_height) / float(expected_px_ref) if expected_px_ref > 0 else 0.0
-                    threat = size_ratio > THREAT_THRESHOLD
-                    box_color = (0, 0, 255) if threat else (0, 255, 0)
 
                     # Draw bounding box (use different color if still pending)
                     if matched_id in person_attributes:
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
-                        # Draw health/mana bars using stored attributes (ensure display even if local vars are None)
                         stored = person_attributes.get(matched_id)
+                        # Determine box color based on job
+                        job = stored.get('job', 'Unknown')
+                        job_color = JOB_COLORS.get(job, (200, 200, 200))
+
+                        cv2.rectangle(frame, (x1, y1), (x2, y2), job_color, 2)
+                        
                         if stored is not None:
                             disp_hp = int(stored.get('hp', 0))
                             disp_mana = int(stored.get('mana', 0))
+                            # Draw health/mana bars
                             bar_x = (x1 + x2) // 2 - 75
                             bar_y = max(10, y1 - 70)
                             draw_health_bars(frame, bar_x, bar_y, disp_hp, disp_mana)
+                            # Draw job name above HP/Mana bars
+                            job_text = f"{job}"
+                            cv2.putText(frame, job_text, (x1 + 5, max(20, y1 - 90)), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, job_color, 2)
                     else:
                         # pending detection (not yet assigned) - draw gray box
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (200, 200, 200), 2)
