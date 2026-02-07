@@ -322,7 +322,7 @@ def main():
             if not ret:
                 break
 
-            results = det_model.track(frame, persist=True, classes=[0], conf=0.4, tracker="bytetrack.yaml")
+            results = det_model.track(frame, persist=True, classes=[0], conf=0.4, tracker="bytetrack.yaml",verbose=False)
 
             for r in results:
                 if r.boxes.id is None:
