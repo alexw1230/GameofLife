@@ -9,6 +9,7 @@ from ultralytics import YOLO
 import base64
 from pathlib import Path
 from openai import OpenAI
+from quester import check_quest_reminder
 
 try:
     import yaml
@@ -19,6 +20,18 @@ client = OpenAI(
     api_key="rc_b4df6774a92819b35ccb07a5ac80134dfe40ba6f67582859cf0b406e383fe31b", 
     base_url="https://api.featherless.ai/v1"
 )
+
+def generate_mainquest():
+   q = check_quest_reminder()
+   prompt = f"Here is a task I have to do: {q}. Please make it sound like a medieval quest. No more than 5 words, hard limit. Don't actually use the word quest in the response."
+   response = client.chat.completions.create(
+   model="meta-llama/Meta-Llama-3.1-8B-Instruct",
+   messages=[
+   {"role": "user", "content": prompt}
+   ]
+   )
+   return response.choices[0].message.content
+
 def encode_image_to_base64(image_path):
     """Encode a local image file to base64 string."""
     with open(image_path, "rb") as image_file:
