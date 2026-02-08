@@ -34,7 +34,23 @@ client = OpenAI(
     api_key=OPENAI_API_KEY,
     base_url="https://api.featherless.ai/v1"
 )
+messages = []
 
+def clear_messages():
+    messages.clear()
+def init_convo(title,hp,mana,utitle,desc):
+    initprompt = f"This will be a roleplay chat. The user will be roleplaying with you. Your character is a {title} with hp of {hp} and mana of{mana}. You have the particular title of {utitle} and the description of your character reads as follows: {desc}. You must be family friendy. Be complementative and engaging. Don't add anything else just the message as it was intended to be read. Pretend you are on the side of the street or in a common space talking, so don't reference any particuar location like a bakery or smithing shop or anything. Don't use any expressions or gestures like *warm smile* or *bows*. It should just be a plain text chat"
+    messages.append({"role":"user", "content": initprompt})
+def message(msg):
+    prompt = f""
+    messages.append({"role": "user", "content": prompt})
+    response = client.chat.completions.create(
+    model="meta-llama/Meta-Llama-3.1-8B-Instruct",
+    messages=messages
+    )
+    outp = response.choices[0].message.content
+    messages.append({"role": "assistant", "content": outp})
+    return outp
 def generate_mainquest():
    q = check_quest_reminder()
    print(q)
