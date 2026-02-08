@@ -1,4 +1,5 @@
 import argparse
+import textwrap
 import os
 import random
 import cv2
@@ -14,7 +15,7 @@ except Exception:
     yaml = None
 
 client = OpenAI(
-    api_key="APIKEY", 
+    api_key="rc_b4df6774a92819b35ccb07a5ac80134dfe40ba6f67582859cf0b406e383fe31b", 
     base_url="https://api.featherless.ai/v1"
 )
 def encode_image_to_base64(image_path):
@@ -152,7 +153,7 @@ def mouse_callback(event, x, y, flags, param):
     """Handles mouse clicks, calls AI, and shows Character Card."""
     global latest_frame, click_regions, person_attributes
     
-    # Trigger only on Left Mouse Button Click (LBUTTONDOWN)
+     # Trigger only on Left Mouse Button Click (LBUTTONDOWN)
     if event == cv2.EVENT_LBUTTONDOWN:
         
         # Check if the click (x, y) is inside any of the detected boxes
@@ -160,46 +161,17 @@ def mouse_callback(event, x, y, flags, param):
             if x1 < x < x2 and y1 < y < y2:
                 print(f"✅ Clicked on Person ID: {track_id}. Generating AI Description")
                 
-                # --- STEP 1: FORCE CALCULATE STATS (Live) ---
-                # We do this FRESH right now so it is never "Unknown"
-                if latest_frame is not None:
-                    # 1. Geometry
-                    h_img, w_img, _ = latest_frame.shape
-                    full_height = max(1, y2 - y1)
-                    upper_y2 = y1 + int(full_height * 0.6)
-                    upper_height = max(1, upper_y2 - y1)
-                    
-                    # 2. Distance & HP
-                    # We access the global constants directly here
-                    dist = estimate_distance(upper_height)
-                    # Use default ref_distance=2.0, scale=1.0 since we are outside main loop config
-                    hp = size_to_hp(upper_height, dist, 2.0, 1.0)
-                    
-                    # 3. Mana (Color)
-                    cx1, cy1 = max(0, x1), max(0, y1)
-                    cx2, cy2 = min(w_img, x2), min(h_img, upper_y2)
-                    
-                    if cx2 > cx1 and cy2 > cy1:
-                        upper_body_crop = latest_frame[cy1:cy2, cx1:cx2]
-                        dominant_bgr = dominant_color(upper_body_crop)
-                        mana = color_to_mana(dominant_bgr)
-                    else:
-                        mana = 50 # Fallback if crop fails
-                    
-                    # 4. Job
-                    job = assign_job(hp, mana)
-                else:
-                    # Safety fallback if frame is missing (unlikely)
-                    job, hp, mana = "Unknown", 0, 0
+                # --- STEP 1: USE STORED USER DATA ---
+                data = person_attributes.get(track_id)
+                if data is None: return
+                job = data['job']
+                hp = data['hp']
+                mana = data['mana']
 
                 # --- STEP 2: CALL AI ---
                 try:
-                    # We add the ID to the prompt to force uniqueness
-                    prompt_title = f"{job} (Entity {track_id})"
-                    
                     print(f"   [Stats] Job: {job} | HP: {hp} | MP: {mana}") # Debug print
-                    
-                    ai_response = resp(prompt_title, hp, mana)
+                    ai_response = resp(job, hp, mana)
                     title, unique_title, desc = split_into_three(ai_response)
                 except Exception as e:
                     print(f"AI Error: {e}")
@@ -207,63 +179,47 @@ def mouse_callback(event, x, y, flags, param):
 
                 # 3. Prepare the Image (Create Card)
                 if latest_frame is not None:
-                    # --- TAKE THE SCREENSHOT (CROP) ---
-                    # Ensure we don't crop outside the image
                     h_img, w_img, _ = latest_frame.shape
                     cx1, cy1 = max(0, x1), max(0, y1)
                     cx2, cy2 = min(w_img, x2), min(h_img, y2)
-                    
-                    if cx2 <= cx1 or cy2 <= cy1: return 
-
+                    if cx2 <= cx1 or cy2 <= cy1:
+                        return
                     person_crop = latest_frame[cy1:cy2, cx1:cx2].copy()
-                    
-                    # --- OPEN THE NEW WINDOW ---
                     if person_crop.size > 0:
-                        # Create a UI Card: Add 150px black border at bottom for text
-                        target_width = 800
-                        aspect_ratio = person_crop.shape[0] / person_crop.shape[1]
-                        target_height = int(target_width * aspect_ratio)
+                        card_width = 900
+                        card_height = 800
+                        text_area_height = 200
+                        img_area_height = card_height - text_area_height
+                        img_h, img_w = person_crop.shape[:2]
+                        scale = min(card_width / img_w, img_area_height / img_h)
+                        new_w = int(img_w * scale)
+                        new_h = int(img_h * scale)
+                        card_img = cv2.resize(person_crop, (new_w, new_h))
+                        card = np.zeros((card_height, card_width, 3), dtype=np.uint8)
+                        x_offset = (card_width - new_w) // 2
+                        y_offset = (img_area_height - new_h) // 2
+                        card[y_offset:y_offset+new_h, x_offset:x_offset+new_w, :] = card_img
 
-                        # Resize the person image
-                        card_img = cv2.resize(person_crop, (target_width, target_height))
-
-                        # Add Text Area (Black Border)
-                        text_area_height = 250 # More room for text
-                        card = cv2.copyMakeBorder(card_img, 0, text_area_height, 0, 0, cv2.BORDER_CONSTANT, value=(30, 30, 30))
-
-                        # Draw Text
-                        # 1. Unique Title (Gold)
-                        cv2.putText(card, unique_title.strip(), (20, target_height + 50),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 215, 255), 2)
-
-                        # 2. Class/Job (Gray)
-                        cv2.putText(card, title.strip(), (20, target_height + 90), 
-                                  cv2.FONT_HERSHEY_SIMPLEX, 0.8, (150, 150, 150), 1)
+                        text_y = img_area_height + 40
+                        cv2.putText(card, unique_title.strip(), (20, text_y),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 215, 255), 2)
+                        cv2.putText(card, title.strip(), (20, text_y + 40),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (150, 150, 150), 1)
+                        # Improved text wrapping for description
                         
-                        # 3. Description (White) - Simple wrapping logic 
-                        # We split the desc by words and group them to fit width roughly
-                        words = desc.split()
-                        lines = []
-                        current_line = ""
-                        char_limit = 85
+                        desc_lines = textwrap.wrap(desc, width=80)  # Adjust width for card
+                        max_lines = 5  # Limit lines to fit in text area
+                        desc_lines = desc_lines[:max_lines]
+                        draw_text_box(card, desc_lines, 20, text_y + 80)
 
-                        for word in words:
-                            if len(current_line) + len(word) < char_limit: # rough char limit
-                                current_line += word + " "
-                            else:
-                                lines.append(current_line)
-                                current_line = word + " "
-                        lines.append(current_line)
-
-                        draw_text_box(card, lines, 20, target_height + 130)
-
-                        # Show Window
                         window_name = f"Card: {track_id}"
-                        cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
+                        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+                        cv2.resizeWindow(window_name, card_width, card_height)
                         cv2.imshow(window_name, card)
                         cv2.waitKey(1)
 
                         print(f"   -> Opened Card for ID: {track_id}")
+                        break  # Stop after showing the card for the first valid match
                 return # Stop checking after finding the first match
 
 
@@ -673,7 +629,7 @@ def main():
 
                     # === NEW: ADD BOX TO CLICKABLE REGIONS ===
                     # We store the coordinates and ID so the mouse can find them
-                    current_frame_regions.append((x1, y1, x2, y2, int(track_id)))
+                    current_frame_regions.append((x1, y1, x2, y2, matched_id))
 
                     # Draw bounding box (use different color if still pending)
                     if matched_id in person_attributes:
