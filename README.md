@@ -1,17 +1,25 @@
-# YOLOv8 Person Detection with Clothing Color Classification
+# DevFest2026 RPG Detection & Quest System
 
-A real-time webcam application that detects people and assigns them labels (enemy, friend, romance target) based on their detected clothing color.
+This project is a real-time RPG-themed webcam application for DevFest2026. It combines YOLOv8 person detection, RPG stat assignment, quest tracking, and interactive AI-powered character chat.
 
-## Features
+## Core Features
 
-- **Real-time People Detection**: Uses YOLOv8 for fast and accurate person detection
-- **Clothing Color Analysis**: Detects the dominant color in the upper body/shoulder area of detected people
-- **Automatic Labeling**: Assigns labels based on clothing color:
-  - **Red**: Enemy
-  - **Blue/Green**: Friend
-  - **Yellow**: Romance Target
-  - **Purple**: Enemy
-  - **Black**: Enemy
+- **YOLOv8 Person Detection**: Detects people in the webcam feed using Ultralytics YOLOv8.
+- **RPG Stat Assignment**: Each detected person is assigned HP and Mana based on their size and clothing color brightness.
+- **Job Assignment**: Characters are given RPG jobs (Tank, Mage, Healer, etc.) based on HP/Mana, with fallback jobs for non-matching archetypes.
+- **Quest System**:
+  - Main and side quests are generated and tracked.
+  - Quest completion is verified via image upload and AI validation.
+  - EXP and leveling system for completing quests.
+- **Interactive Character Cards**:
+  - Click on a detected person to view their RPG card.
+  - Card displays unique title, job, description, and stats.
+  - Chat button opens an AI-powered roleplay chat window.
+- **AI Chat System**:
+  - Chat with any character using OpenAI API (Meta-Llama/Gemma models).
+  - Custom user input, AI responses, scrollable chat history, and instructions.
+- **Loading Screen**: Fullscreen loading image shown at startup.
+- **UI Overlays**: Success/failure overlays, quest log, health/mana bars, EXP bar, and boss detection.
 
 ## Installation
 
@@ -23,170 +31,61 @@ A real-time webcam application that detects people and assigns them labels (enem
 
    Note: First-time setup may take a few minutes as it downloads the YOLOv8 model (~100MB)
 
-## Usage
-
-Run the application:
-```bash
-python main.py
-```
-
-### Controls
-- **Press 'q'** to quit the application
-- The webcam feed will display in a window with:
-  - Colored bounding boxes around detected people
-  - Labels showing the assigned category and detected color
-  - Confidence scores for each detection
-
-### Output Colors
-- **Red box**: Enemy (red clothing detected)
-- **Green box**: Friend (blue or green clothing detected)
-- **Yellow box**: Romance target (yellow clothing detected)
-- **Gray box**: Unknown (unclassified)
-
-## How It Works
-
-1. **Detection**: YOLOv8 detects all people in the webcam frame
-2. **Color Analysis**: For each detected person, the upper portion of their bounding box is analyzed
-3. **HSV Color Space**: Colors are detected using HSV (Hue, Saturation, Value) which is more robust to lighting conditions
-4. **Labeling**: The dominant clothing color determines the label assignment
-
-## Color Detection Ranges
-
-The color detection uses HSV color space ranges:
-- **Red**: Hue 0-10 and 170-180
-- **Blue**: Hue 100-130
-- **Green**: Hue 40-80
-- **Yellow**: Hue 20-40
-- **Purple**: Hue 130-160
-- **Black**: Low saturation (0-100) and low value/brightness (0-50)
-
-## Customization
-
-You can modify the label mapping by editing the `label_mapping` dictionary in the `PersonLabelAssigner` class:
-
-```python
-self.label_mapping = {
-    'red': 'enemy',      # Change this to reassign red
-    'blue': 'friend',
-    'green': 'friend',
-    'yellow': 'romance target',
-    'purple': 'enemy'
-}
-```
-
-Or adjust color detection ranges by modifying the `color_ranges` dictionary.
-
-## System Requirements
-
-- Python 3.8 or higher
-- Webcam
-- At least 2GB RAM (more for better performance)
-- GPU recommended for faster inference (CPU will work but slower)
-
-## Performance Notes
-
-- The script uses YOLOv8 nano model (`yolov8n.pt`) for speed
-- For higher accuracy, you can change to `yolov8s.pt` or `yolov8m.pt`
-- First run will download the model automatically
-- Frame resolution is set to 640x480 - adjust in code if needed
-
-## Troubleshooting
-
-**Webcam not detected**: Ensure your webcam is properly connected and no other application is using it
-
-**Slow performance**: 
-- Use a smaller model or reduce frame resolution
-## YOLOv8 Person Detection with Labels, HP, and Mana
-
-Real-time webcam app that detects people, analyzes upper-body clothing color to assign labels (enemy, friend, romance target), and displays RPG-style HP and Mana bars.
-
-## Features
-
-- Real-time person detection using YOLOv8 (Ultralytics)
-- Upper-body color analysis → assign labels (enemy or friend, with 15% chance of romance target override)
-- HP derived from size (reference-distance normalization)
-- Mana derived from dominant color brightness
-- Pending assignment: a person must be visible for `pending_timeout` seconds before HP/Mana/label are committed
-- Persistent per-person attributes across short occlusions (IoU/proximity matching)
-- Color-coded bounding boxes and labels
 
 ## Installation
 
-1. Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-2. Download or ensure the YOLO model exists at `models/yolov8n.pt` (first run will auto-download)
+1. Clone the repository and navigate to the project directory.
+2. Install dependencies:
+  ```bash
+  pip install -r requirements.txt
+  ```
+3. Place YOLOv8 model file at `models/yolov8n.pt` (auto-download on first run).
+4. Add your OpenAI API key to `key.env` or set `OPENAI_API_KEY` environment variable.
 
 ## Usage
 
-Run the main detection script:
 
-```bash
-python src/main_pose.py
-```
+## Quest System
+- Main quest is generated and tracked, with cooldown and regeneration logic.
+- Side quests are randomly assigned from a pool.
+- Completing quests awards EXP and can trigger level-ups.
+- Quest completion is validated by uploading a screenshot and using AI to check evidence.
 
-- Press `q` to quit.
+## RPG Stats & Job Assignment
+- HP is calculated from bounding box size and reference distance.
+- Mana is calculated from clothing color brightness.
+- Jobs are assigned based on HP/Mana requirements:
+  - Tank, Warrior, Warlock, Mage, Healer, Muggle (requirement-based)
+  - Commoner, Blacksmith, Noble, Baker, Farmer (random fallback)
+- Boss detection highlights the largest character each frame.
+
+## AI Chat System
+- Each character card has a chat button.
+- Chat window allows roleplay conversation with the AI, using character stats and description.
+- Chat history is scrollable, and instructions are shown in the UI.
+- Color-coded bounding boxes and labels
+
 
 ## Configuration
-
-The application reads `config.yaml` by default. Key options:
-
-- `smoothing_alpha`: EMA alpha for smoothing HP/Mana (0.0 - 1.0). Higher favors new measurements.
-- `ref_distance`: Reference distance in meters used for HP scaling (default 2.0)
-- `hp_scale`: Multiplicative calibration for HP values
-- `pending_timeout`: Seconds a detection must remain visible before assignment (default 2.5)
-- `person_timeout`: Seconds after last seen to forget a person (default 30)
-
-Example `config.yaml` is included in the repo.
-
-## Job Assignment System
-
-The app assigns one of 11 jobs based on HP and Mana values:
-
-### Jobs with HP/Mana Requirements
-
-- **Tank**: HP > 80 (Blue box)
-- **Warrior**: HP > 65 and Mana > 30 (Red box)
-- **Warlock**: HP > 65 and Mana > 60 (Magenta box)
-- **Mage**: HP < 30 and Mana > 75 (Cyan box)
-- **Healer**: HP < 30 and Mana > 75 (Green box) *(same as Mage, Mage checked first)*
-- **Muggle**: Mana < 10 (Gray box)
-
-### Jobs for Non-Matching Archetypes (Randomly Assigned)
-
-- **Commoner** (Brown box)
-- **Blacksmith** (Orange box)
-- **Noble** (Gold box)
-- **Baker** (Tan box)
-- **Farmer** (Dark Green box)
-
-Anyone not fitting the above requirements gets a random job from the non-matching list.
+- Edit `config.yaml` for parameters like smoothing alpha, reference distance, HP scale, quest timeouts, etc.
+- Place your OpenAI API key in `key.env` or set as environment variable.
 
 ## Requirements
-
 - Python 3.8+
-- Dependencies (in `requirements.txt`): `ultralytics`, `opencv-python`, `numpy`, `PyYAML`, `torch`
+- Webcam
+- Ultralytics YOLOv8 model file (`models/yolov8n.pt`)
+- OpenAI API key
+- Dependencies: `ultralytics`, `opencv-python`, `numpy`, `PyYAML`, `torch`, `tkinter`
 
-## How It Works (brief)
+## Troubleshooting
+- If webcam is not detected, ensure it is connected and not used by other apps.
+- If HP/Mana values seem off, adjust `hp_scale` and `ref_distance` in `config.yaml`.
+- For slow performance, use a smaller YOLO model or reduce frame resolution.
+- If chat or quest validation fails, check your OpenAI API key and internet connection.
 
-1. YOLOv8 detects people and provides tracked boxes.
-2. For unmatched detections, the app starts a pending timer (configured by `pending_timeout`).
-3. While pending, a gray box is shown.
-4. After the timeout, compute:
-  - **HP**: derived from person size (reference-distance normalization)
-  - **Mana**: derived from upper-body color brightness
-5. **Job Assignment**:
-  - Check if HP/Mana match any requirement (Tank, Warrior, Warlock, Mage, Healer, Muggle)
-  - If match found, assign that job
-  - Otherwise, randomly pick from: Commoner, Blacksmith, Noble, Baker, Farmer
-6. Job, HP, and Mana are displayed above the person until they are forgotten (`person_timeout`).
-
-## Troubleshooting & Tips
-
-- If HP values are too small/large, tweak `hp_scale` in `config.yaml`.
-- Increase `pending_timeout` if people move quickly and you get mistaken label assignments.
-- Ensure good lighting for reliable color detection.
-- Adjust HSV color ranges in the code (HSV_COLOR_RANGES) if clothing colors are not detected correctly.
+## Project Intent
+This project demonstrates:
+- Real-time computer vision for RPG character detection and stat assignment.
+- Interactive quest and leveling system.
+- AI-powered roleplay chat for immersive character interaction.
+- Modular, extensible code for future RPG features and festival demos.
