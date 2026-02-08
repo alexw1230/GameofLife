@@ -1,4 +1,4 @@
-Standup: 09:00-09:30
+Standup: 00:45-01:00
 Design Review: 10:00-11:00
 Lunch: 12:00-13:00
 Client Call: 14:30-15:15

@@ -17,7 +17,7 @@ except Exception:
     yaml = None
 
 client = OpenAI(
-    api_key="dumbass", 
+    api_key="Fallen Kingdom", 
     base_url="https://api.featherless.ai/v1"
 )
 
