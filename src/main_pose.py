@@ -15,7 +15,7 @@ except Exception:
     yaml = None
 
 client = OpenAI(
-    api_key="rc_b4df6774a92819b35ccb07a5ac80134dfe40ba6f67582859cf0b406e383fe31b", 
+    api_key="APIKEY", 
     base_url="https://api.featherless.ai/v1"
 )
 def encode_image_to_base64(image_path):
@@ -432,6 +432,23 @@ def draw_health_bars(frame: np.ndarray, x: int, y: int, hp: int, mana: int, max_
 
 
 def main():
+    # === QUEST LOG SYSTEM ===
+    import random
+    QUEST_POOL = [
+        "Talk to 3 new people",
+        "Build a working demo",
+        "Eat a snack",
+        "Ask a mentor for help",
+        "Submit your project",
+            "Take a group photo",
+            "Present your idea",
+            "Find a bug and fix it",
+            "Help another team",
+            "Make a new friend"
+        ]
+    MAIN_QUEST = "Win the Hackathon"
+    sidequest = random.choice(QUEST_POOL)
+
     """Initialize models, camera and run the detection loop."""
     parser = argparse.ArgumentParser(description='YOLOv8 RPG View')
     parser.add_argument('--config', type=str, default='config.yaml', help='Path to config YAML')
@@ -743,7 +760,7 @@ def main():
                         boss_text_x = bx1 + 5
                         boss_text_y = max(20, by1 - int(90 * eff_scale))
                         # Use a bold font for Boss label (thicker outline)
-                        cv2.putText(frame, boss_title, (boss_text_x, boss_text_y), cv2.FONT_HERSHEY_SIMPLEX, max(0.4, 0.6 * eff_scale), (0, 215, 255), max(3, int(3 * eff_scale)))
+                        cv2.putText(frame, boss_title, (boss_text_x, boss_text_y), cv2.FONT_HERSHEY_SIMPLEX, max(0.4, 0.6 * eff_scale), (0, 215, 255), max(2, int(2 * eff_scale)))
 
             # === NEW: PUBLISH REGIONS TO GLOBAL ===
             # Update the global list so the mouse callback sees the latest positions
@@ -763,6 +780,29 @@ def main():
                     stale_persons.append(pid)
             for pid in stale_persons:
                 person_attributes.pop(pid, None)
+
+            # Draw Quest Log in top right (with text wrapping)
+            import textwrap
+            quest_box_w = 200
+            quest_box_h = 80
+            quest_box_x = frame.shape[1] - quest_box_w - 20
+            quest_box_y = 20
+            cv2.rectangle(frame, (quest_box_x, quest_box_y), (quest_box_x + quest_box_w, quest_box_y + quest_box_h), (30, 30, 60), -1)
+            cv2.rectangle(frame, (quest_box_x, quest_box_y), (quest_box_x + quest_box_w, quest_box_y + quest_box_h), (200, 200, 255), 2)
+            # Main Quest
+            cv2.putText(frame, "Main Quest:", (quest_box_x + 10, quest_box_y + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 215, 0), 2)
+            main_lines = textwrap.wrap(MAIN_QUEST, width=20)
+            for i, line in enumerate(main_lines):
+                y = quest_box_y + 32 + i*18
+                if y > quest_box_y + 40: break
+                cv2.putText(frame, line, (quest_box_x + 10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+            # Side Quest
+            cv2.putText(frame, "Side Quest:", (quest_box_x + 10, quest_box_y + 50), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 180), 2)
+            side_lines = textwrap.wrap(sidequest, width=20)
+            for i, line in enumerate(side_lines):
+                y = quest_box_y + 65 + i*18
+                if y > quest_box_y + quest_box_h - 10: break
+                cv2.putText(frame, line, (quest_box_x + 10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
 
             cv2.imshow("YOLOv8 RPG View", frame)
             # Correct quit logic: waitKey returns int, mask with 0xFF
