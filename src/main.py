@@ -491,7 +491,7 @@ def main():
         "Eat a snack",
         "Ask a mentor for help",
         "Take a group photo",
-        "Make a new friend"
+        "Make a friend"
         ]
     q, MAIN_QUEST = generate_mainquest()
     prev_main_quest = MAIN_QUEST
@@ -1006,4 +1006,42 @@ def main():
 
 
 if __name__ == '__main__':
+    # Show loading screen for 10 seconds before running main
+    import cv2, time, os
+    loading_path = os.path.join(os.path.dirname(__file__), '..', 'loading.png')
+    if not os.path.exists(loading_path):
+        loading_path = os.path.join(os.path.dirname(__file__), 'loading.png')
+    img = cv2.imread(loading_path)
+    if img is not None:
+        # Get screen size
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            screen_w, screen_h = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+        except Exception:
+            screen_w, screen_h = 1920, 1080  # fallback
+        img_h, img_w = img.shape[:2]
+        scale = min(screen_w / img_w, screen_h / img_h)
+        new_w = int(img_w * scale)
+        new_h = int(img_h * scale)
+        # Resize image
+        img_resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        # Create black background
+        fullscreen = np.zeros((screen_h, screen_w, 3), dtype=np.uint8)
+        # Center the image
+        x_offset = (screen_w - new_w) // 2
+        y_offset = (screen_h - new_h) // 2
+        fullscreen[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = img_resized
+        cv2.namedWindow("Loading...", cv2.WINDOW_NORMAL)
+        cv2.setWindowProperty("Loading...", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        cv2.imshow("Loading...", fullscreen)
+        cv2.waitKey(1)
+        start = time.time()
+        while time.time() - start < 10:
+            if cv2.getWindowProperty("Loading...", cv2.WND_PROP_VISIBLE) < 1:
+                break
+            cv2.imshow("Loading...", fullscreen)
+            if cv2.waitKey(100) & 0xFF == ord('q'):
+                break
+        cv2.destroyWindow("Loading...")
     main()
