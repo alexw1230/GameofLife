@@ -200,7 +200,8 @@ def mouse_callback(event, x, y, flags, param):
                     cv2.imwrite(screenshot_path, latest_frame)
                     # Call check_quest_complete
                     try:
-                        result = check_quest_complete(screenshot_path, quest_text)
+                        q = check_quest_reminder()
+                        result = check_quest_complete(screenshot_path, q)
                     except Exception as e:
                         print(f"Quest check error: {e}")
                         result = False
@@ -493,6 +494,9 @@ def main():
         "Make a new friend"
         ]
     q, MAIN_QUEST = generate_mainquest()
+    prev_main_quest = MAIN_QUEST
+    main_quest_cooldown = False
+    main_quest_cooldown_start = 0
     sidequest = random.choice(QUEST_POOL)
 
     # Initialize quest_log_regions before main loop to avoid empty region on first click
@@ -854,7 +858,10 @@ def main():
             cv2.rectangle(frame, (quest_box_x, quest_box_y), (quest_box_x + quest_box_w, quest_box_y + quest_box_h), (200, 200, 255), 2)
             # Main Quest
             cv2.putText(frame, "Main Quest:", (quest_box_x + 10, quest_box_y + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 215, 0), 2)
-            main_lines = textwrap.wrap(MAIN_QUEST, width=40)
+            if main_quest_cooldown:
+                main_lines = textwrap.wrap("No quest...", width=40)
+            else:
+                main_lines = textwrap.wrap(MAIN_QUEST, width=40)
             for i, line in enumerate(main_lines):
                 y = quest_box_y + 32 + i*18
                 if y > quest_box_y + 40: break
@@ -875,12 +882,81 @@ def main():
                     sidequest = random.choice([q for q in QUEST_POOL if q != sidequest])
                     quest_result_overlay['show'] = False
 
+            # Main quest completion logic
+            # Show a big, fancy overlay for 5 seconds before cooldown
+            if 'main_quest_success' not in locals():
+                main_quest_success = False
+                main_quest_success_start = 0
+
+            if quest_result_overlay['show'] and quest_result_overlay['success'] and quest_result_overlay['quest'] == MAIN_QUEST and not main_quest_cooldown and not main_quest_success:
+                main_quest_success = True
+                main_quest_success_start = time.time()
+                quest_result_overlay['show'] = False
+
+            if main_quest_success:
+                elapsed_success = time.time() - main_quest_success_start
+                if elapsed_success < 5.0:
+                    # Draw a big, fancy overlay with 'COMPLETE!' on a new line
+                    overlay_w = 600
+                    overlay_h = 270
+                    ox = frame.shape[1]//2 - overlay_w//2
+                    oy = frame.shape[0]//2 - overlay_h//2
+                    # Gold border and background
+                    cv2.rectangle(frame, (ox, oy), (ox+overlay_w, oy+overlay_h), (40, 40, 10), -1)
+                    cv2.rectangle(frame, (ox, oy), (ox+overlay_w, oy+overlay_h), (0, 215, 255), 8)
+                    # Confetti (random colored circles)
+                    for _ in range(40):
+                        cx = ox + np.random.randint(20, overlay_w-20)
+                        cy = oy + np.random.randint(20, overlay_h-20)
+                        color = tuple(int(x) for x in np.random.choice(range(100,256), size=3))
+                        cv2.circle(frame, (cx, cy), np.random.randint(6, 16), color, -1)
+                    # Main text split: 'MAIN QUEST' and 'COMPLETE!' on separate lines
+                    # Center the main quest success text and quest name
+                    main_quest_text = "MAIN QUEST"
+                    complete_text = "COMPLETE!"
+                    font = cv2.FONT_HERSHEY_TRIPLEX
+                    font_scale = 1.7
+                    font_thickness = 4
+                    # Get text sizes
+                    (mq_w, mq_h), _ = cv2.getTextSize(main_quest_text, font, font_scale, font_thickness)
+                    (c_w, c_h), _ = cv2.getTextSize(complete_text, font, font_scale, font_thickness)
+                    quest_font = cv2.FONT_HERSHEY_SIMPLEX
+                    quest_font_scale = .9
+                    quest_font_thickness = 3
+                    (q_w, q_h), _ = cv2.getTextSize(MAIN_QUEST, quest_font, quest_font_scale, quest_font_thickness)
+                    # Calculate centered positions
+                    mq_x = ox + (overlay_w - mq_w) // 2
+                    mq_y = oy + 90
+                    c_x = ox + (overlay_w - c_w) // 2
+                    c_y = oy + 150
+                    q_x = ox + (overlay_w - q_w) // 2
+                    q_y = oy + 210
+                    cv2.putText(frame, main_quest_text, (mq_x, mq_y), font, font_scale, (0, 215, 255), font_thickness)
+                    cv2.putText(frame, complete_text, (c_x, c_y), font, font_scale, (0, 215, 255), font_thickness)
+                    cv2.putText(frame, MAIN_QUEST, (q_x, q_y), quest_font, quest_font_scale, (255,255,255), quest_font_thickness)
+                else:
+                    main_quest_success = False
+                    main_quest_cooldown = True
+                    main_quest_cooldown_start = time.time()
+                    prev_main_quest = q
+                    MAIN_QUEST = ""
+
+            if main_quest_cooldown:
+                elapsed_cooldown = time.time() - main_quest_cooldown_start
+                if elapsed_cooldown >= 30.0:
+                    q_new, new_main_quest = generate_mainquest()
+                    if q_new == q:
+                        MAIN_QUEST = "Find the Porcelain Throne"
+                    else:
+                        MAIN_QUEST = new_main_quest
+                    main_quest_cooldown = False
+
             # Update quest_log_regions for click detection (main and side quest clickable areas)
             quest_log_regions = []
             # Main quest region (top half)
             main_quest_y1 = quest_box_y + 18
             main_quest_y2 = quest_box_y + 48
-            quest_log_regions.append((quest_box_x, main_quest_y1, quest_box_x + quest_box_w, main_quest_y2, 'main', q))
+            quest_log_regions.append((quest_box_x, main_quest_y1, quest_box_x + quest_box_w, main_quest_y2, 'main', MAIN_QUEST if not main_quest_cooldown else ""))
             # Side quest region (bottom half)
             side_quest_y1 = quest_box_y + 52
             side_quest_y2 = quest_box_y + quest_box_h
@@ -890,19 +966,32 @@ def main():
             if quest_result_overlay['show']:
                 elapsed = time.time() - quest_result_overlay['timestamp']
                 if elapsed < 5.0:
+                    # Only show sidequest or failed overlays here
                     overlay_text = ("Quest Complete!" if quest_result_overlay['success'] else "Quest Failed!")
                     color = (0, 255, 0) if quest_result_overlay['success'] else (0, 0, 255)
                     msg = f"{overlay_text}"
                     quest_name = quest_result_overlay['quest']
-                    # Draw overlay box in center
-                    overlay_w = 400
+                    overlay_w = 520
                     overlay_h = 120
                     ox = frame.shape[1]//2 - overlay_w//2
                     oy = frame.shape[0]//2 - overlay_h//2
                     cv2.rectangle(frame, (ox, oy), (ox+overlay_w, oy+overlay_h), (30, 30, 30), -1)
                     cv2.rectangle(frame, (ox, oy), (ox+overlay_w, oy+overlay_h), color, 3)
-                    cv2.putText(frame, msg, (ox+30, oy+50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3)
-                    cv2.putText(frame, f"{quest_name}", (ox+30, oy+90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
+                    # Center the message and quest name
+                    msg_font = cv2.FONT_HERSHEY_SIMPLEX
+                    msg_font_scale = 1.2
+                    msg_font_thickness = 3
+                    quest_font = cv2.FONT_HERSHEY_SIMPLEX
+                    quest_font_scale = 0.7
+                    quest_font_thickness = 2
+                    (msg_w, msg_h), _ = cv2.getTextSize(msg, msg_font, msg_font_scale, msg_font_thickness)
+                    (qn_w, qn_h), _ = cv2.getTextSize(quest_name, quest_font, quest_font_scale, quest_font_thickness)
+                    msg_x = ox + (overlay_w - msg_w) // 2
+                    msg_y = oy + 55
+                    qn_x = ox + (overlay_w - qn_w) // 2
+                    qn_y = oy + 100
+                    cv2.putText(frame, msg, (msg_x, msg_y), msg_font, msg_font_scale, color, msg_font_thickness)
+                    cv2.putText(frame, f"{quest_name}", (qn_x, qn_y), quest_font, quest_font_scale, (255,255,255), quest_font_thickness)
                 else:
                     quest_result_overlay['show'] = False
 
