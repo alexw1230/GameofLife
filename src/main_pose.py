@@ -14,7 +14,7 @@ except Exception:
     yaml = None
 
 client = OpenAI(
-    api_key="APIKEY",
+    api_key="APIKEY", #KEEP api_key="APIKEY"
     base_url="https://api.featherless.ai/v1"
 )
 def encode_image_to_base64(image_path):
@@ -137,10 +137,20 @@ JOB_COLORS = {
 # We need these so the mouse listener knows what's happening in the main loop
 latest_frame = None
 click_regions = []  # Will store tuples: (x1, y1, x2, y2, track_id)
+# =================== Persistent attributes ===================
+# track_id -> {'hp': HP, 'mana': Mana, 'job': job, 'bbox': (x1,y1,x2,y2), 'upper_bbox': (...), ...}
+person_attributes = {}
+
+def draw_text_box(img, text_list, x, y, font_scale=0.6, color=(255, 255, 255), thickness=1):
+    """Helper to draw multiple lines of text."""
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    line_height = 25
+    for i, line in enumerate(text_list):
+        cv2.putText(img, line.strip(), (x, y + (i * line_height)), font, font_scale, color, thickness)
 
 def mouse_callback(event, x, y, flags, param):
-    """Handles mouse clicks on the video window."""
-    global latest_frame, click_regions
+    """Handles mouse clicks, calls AI, and shows Character Card."""
+    global latest_frame, click_regions, person_attributes
     
     # Trigger only on Left Mouse Button Click (LBUTTONDOWN)
     if event == cv2.EVENT_LBUTTONDOWN:
@@ -148,31 +158,113 @@ def mouse_callback(event, x, y, flags, param):
         # Check if the click (x, y) is inside any of the detected boxes
         for (x1, y1, x2, y2, track_id) in click_regions:
             if x1 < x < x2 and y1 < y < y2:
-                print(f"✅ Clicked on Person ID: {track_id}")
+                print(f"✅ Clicked on Person ID: {track_id}. Generating AI Description")
                 
+                # --- STEP 1: FORCE CALCULATE STATS (Live) ---
+                # We do this FRESH right now so it is never "Unknown"
+                if latest_frame is not None:
+                    # 1. Geometry
+                    h_img, w_img, _ = latest_frame.shape
+                    full_height = max(1, y2 - y1)
+                    upper_y2 = y1 + int(full_height * 0.6)
+                    upper_height = max(1, upper_y2 - y1)
+                    
+                    # 2. Distance & HP
+                    # We access the global constants directly here
+                    dist = estimate_distance(upper_height)
+                    # Use default ref_distance=2.0, scale=1.0 since we are outside main loop config
+                    hp = size_to_hp(upper_height, dist, 2.0, 1.0)
+                    
+                    # 3. Mana (Color)
+                    cx1, cy1 = max(0, x1), max(0, y1)
+                    cx2, cy2 = min(w_img, x2), min(h_img, upper_y2)
+                    
+                    if cx2 > cx1 and cy2 > cy1:
+                        upper_body_crop = latest_frame[cy1:cy2, cx1:cx2]
+                        dominant_bgr = dominant_color(upper_body_crop)
+                        mana = color_to_mana(dominant_bgr)
+                    else:
+                        mana = 50 # Fallback if crop fails
+                    
+                    # 4. Job
+                    job = assign_job(hp, mana)
+                else:
+                    # Safety fallback if frame is missing (unlikely)
+                    job, hp, mana = "Unknown", 0, 0
+
+                # --- STEP 2: CALL AI ---
+                try:
+                    # We add the ID to the prompt to force uniqueness
+                    prompt_title = f"{job} (Entity {track_id})"
+                    
+                    print(f"   [Stats] Job: {job} | HP: {hp} | MP: {mana}") # Debug print
+                    
+                    ai_response = resp(prompt_title, hp, mana)
+                    title, unique_title, desc = split_into_three(ai_response)
+                except Exception as e:
+                    print(f"AI Error: {e}")
+                    title, unique_title, desc = (str(job), "The Unknown", "AI generation failed.")
+
+                # 3. Prepare the Image (Create Card)
                 if latest_frame is not None:
                     # --- TAKE THE SCREENSHOT (CROP) ---
                     # Ensure we don't crop outside the image
-                    h, w, _ = latest_frame.shape
-                    crop_x1, crop_y1 = max(0, x1), max(0, y1)
-                    crop_x2, crop_y2 = min(w, x2), min(h, y2)
+                    h_img, w_img, _ = latest_frame.shape
+                    cx1, cy1 = max(0, x1), max(0, y1)
+                    cx2, cy2 = min(w_img, x2), min(h_img, y2)
                     
-                    person_crop = latest_frame[crop_y1:crop_y2, crop_x1:crop_x2]
+                    if cx2 <= cx1 or cy2 <= cy1: return 
+
+                    person_crop = latest_frame[cy1:cy2, cx1:cx2].copy()
                     
                     # --- OPEN THE NEW WINDOW ---
                     if person_crop.size > 0:
-                        window_name = f"Profile: Person {track_id}"
-                        cv2.imshow(window_name, person_crop)
-                        print(f"   -> Opened window: {window_name}")
+                        # Create a UI Card: Add 150px black border at bottom for text
+                        target_width = 800
+                        aspect_ratio = person_crop.shape[0] / person_crop.shape[1]
+                        target_height = int(target_width * aspect_ratio)
+
+                        # Resize the person image
+                        card_img = cv2.resize(person_crop, (target_width, target_height))
+
+                        # Add Text Area (Black Border)
+                        text_area_height = 250 # More room for text
+                        card = cv2.copyMakeBorder(card_img, 0, text_area_height, 0, 0, cv2.BORDER_CONSTANT, value=(30, 30, 30))
+
+                        # Draw Text
+                        # 1. Unique Title (Gold)
+                        cv2.putText(card, unique_title.strip(), (20, target_height + 50),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 215, 255), 2)
+
+                        # 2. Class/Job (Gray)
+                        cv2.putText(card, title.strip(), (20, target_height + 90), 
+                                  cv2.FONT_HERSHEY_SIMPLEX, 0.8, (150, 150, 150), 1)
+                        
+                        # 3. Description (White) - Simple wrapping logic 
+                        # We split the desc by words and group them to fit width roughly
+                        words = desc.split()
+                        lines = []
+                        current_line = ""
+                        char_limit = 85
+
+                        for word in words:
+                            if len(current_line) + len(word) < char_limit: # rough char limit
+                                current_line += word + " "
+                            else:
+                                lines.append(current_line)
+                                current_line = word + " "
+                        lines.append(current_line)
+
+                        draw_text_box(card, lines, 20, target_height + 130)
+
+                        # Show Window
+                        window_name = f"Card: {track_id}"
+                        cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
+                        cv2.imshow(window_name, card)
+                        cv2.waitKey(1)
+
+                        print(f"   -> Opened Card for ID: {track_id}")
                 return # Stop checking after finding the first match
-
-
-
-
-
-# =================== Persistent attributes ===================
-# track_id -> {'hp': HP, 'mana': Mana, 'job': job, 'bbox': (x1,y1,x2,y2), 'upper_bbox': (...), ...}
-person_attributes = {}
 
 
 # =================== Helper functions ===================
@@ -696,7 +788,7 @@ def main():
             # === NEW: PUBLISH REGIONS TO GLOBAL ===
             # Update the global list so the mouse callback sees the latest positions
             click_regions = current_frame_regions
-            
+
             # Cleanup pending_seen entries that haven't been updated recently
             stale_pending = [pid for pid, info in pending_seen.items() if (time.time() - info.get('last_seen', info.get('first_seen', 0))) > pending_timeout]
             for pid in stale_pending:
