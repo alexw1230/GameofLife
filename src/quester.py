@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 
 
-def check_quest_reminder(filename="src/quests.txt"):
+def check_quest_reminder(filename="quests.txt"):
     now = datetime.now()
 
     with open(filename, "r") as file:
@@ -11,8 +11,12 @@ def check_quest_reminder(filename="src/quests.txt"):
                 continue
 
             try:
+                # Split quest info and exp value
+                quest_info, exp_str = line.split(",", 1)
+                exp_value = int(exp_str.strip())
+                
                 # Split only on the first colon
-                name, times = line.split(":", 1)
+                name, times = quest_info.split(":", 1)
                 start_str, end_str = times.strip().split("-")
 
                 # Convert to datetime
@@ -29,13 +33,13 @@ def check_quest_reminder(filename="src/quests.txt"):
 
                 # Current meeting
                 if start_time <= now <= end_time:
-                    return f"Current quest: {name.strip()}"
+                    return f"Current quest: {name.strip()}", exp_value
 
                 # 30-minute reminder
                 if now <= start_time <= now + timedelta(minutes=30):
-                    return f"Get to this quest: {name.strip()}"
+                    return f"Get to this quest: {name.strip()}", exp_value
 
             except ValueError:
                 continue
 
-    return None
+    return None, 0

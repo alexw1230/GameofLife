@@ -52,8 +52,11 @@ def message(msg):
     messages.append({"role": "assistant", "content": outp})
     return outp
 def generate_mainquest():
-   q = check_quest_reminder()
-   print(q)
+   result = check_quest_reminder()
+   if result[0] is None or result[1] == 0:
+       return None, "", 0
+   q, exp_reward = result
+   print(f"{q} - EXP: {exp_reward}")
    prompt = f"Here is a task I have to do: {q}. Please make it sound like a medieval quest. No more than 5 words, hard limit. Don't actually use the word quest in the response. The receiver should easily be able to recognize what the task is."
    print(prompt)
    response = client.chat.completions.create(
@@ -62,7 +65,7 @@ def generate_mainquest():
    {"role": "user", "content": prompt}
    ]
    )
-   return q, response.choices[0].message.content
+   return q, response.choices[0].message.content, exp_reward
 
 def encode_image_to_base64(image_path):
     """Encode a local image file to base64 string."""
@@ -216,8 +219,9 @@ def mouse_callback(event, x, y, flags, param):
                     # Call check_quest_complete
                     try:
                         if quest_type == 'main':
-                            q = check_quest_reminder()
-                            result = check_quest_complete(screenshot_path, q)
+                            q_result = check_quest_reminder()
+                            quest_desc = q_result[0] if q_result[0] else "Unknown quest"
+                            result = check_quest_complete(screenshot_path, quest_desc)
                         else:
                             result = check_quest_complete(screenshot_path, quest_text)
                     except Exception as e:
@@ -502,6 +506,37 @@ def draw_health_bars(frame: np.ndarray, x: int, y: int, hp: int, mana: int, max_
     cv2.putText(frame, f"Mana {mana}/{max_mana}", (x + 10, y + bar_height + spacing + int(bar_height * 0.95)), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), max(1, int(scale)))
 
 
+def draw_exp_bar(frame: np.ndarray, x: int, y: int, current_exp: int, max_exp: int, level: int, scale: float = 1.0):
+    """Draw RPG-style EXP bar at (x,y) with level indicator."""
+    # Base sizes (when scale == 1.0)
+    base_bar_width = 150
+    base_bar_height = 15
+    outline_thickness = max(1, int(2 * scale))
+
+    # Apply scale but ensure minimum sizes
+    bar_width = max(40, int(base_bar_width * scale))
+    bar_height = max(6, int(base_bar_height * scale))
+
+    # Panel background and border
+    panel_width = bar_width + 60
+    panel_height = bar_height + 20
+    cv2.rectangle(frame, (x - 10, y - 10), (x + panel_width, y + panel_height), (20, 20, 20), -1)
+    cv2.rectangle(frame, (x - 10, y - 10), (x + panel_width, y + panel_height), (150, 150, 100), outline_thickness)
+
+    # EXP bar
+    exp_ratio = max(0.0, min(float(current_exp) / float(max_exp), 1.0))
+    exp_bar_width = int(bar_width * exp_ratio)
+    cv2.rectangle(frame, (x + 5, y + 5), (x + bar_width + 5, y + bar_height + 5), (50, 50, 100), -1)
+    cv2.rectangle(frame, (x + 5, y + 5), (x + 5 + exp_bar_width, y + bar_height + 5), (100, 255, 100), -1)
+    cv2.rectangle(frame, (x + 5, y + 5), (x + bar_width + 5, y + bar_height + 5), (150, 150, 150), outline_thickness)
+
+    font_scale = max(0.3, 0.35 * scale)
+    # Level indicator
+    cv2.putText(frame, f"LVL {level}", (x + bar_width + 15, y + 5 + int(bar_height * 0.9)), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (100, 255, 100), max(1, int(scale)))
+    # EXP text
+    cv2.putText(frame, f"EXP {current_exp}/{max_exp}", (x + 10, y + 5 + int(bar_height * 1.8)), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (200, 200, 200), 1)
+
+
 def main():
     # === QUEST LOG SYSTEM ===
     import random
@@ -511,11 +546,27 @@ def main():
         "Take a group photo",
         "Drink something"
         ]
-    q, MAIN_QUEST = generate_mainquest()
+    # Side quest EXP rewards (matching QUEST_POOL)
+    QUEST_EXP = {
+        "Eat a snack": 35,
+        "Ask a mentor for help": 60,
+        "Take a group photo": 55,
+        "Drink something": 25
+    }
+    q, MAIN_QUEST, main_quest_exp = generate_mainquest()
+    if MAIN_QUEST == "":
+        MAIN_QUEST = "Find the Porcelain Throne"
+        main_quest_exp = 50
     prev_main_quest = MAIN_QUEST
     main_quest_cooldown = False
     main_quest_cooldown_start = 0
     sidequest = random.choice(QUEST_POOL)
+    sidequest_exp = QUEST_EXP.get(sidequest, 30)  # Default 30 if not found
+
+    # === EXP SYSTEM ===
+    current_level = 1
+    current_exp = 0
+    max_exp_for_level = 100
 
     # Initialize quest_log_regions before main loop to avoid empty region on first click
     global quest_log_regions
@@ -892,12 +943,28 @@ def main():
                 if y > quest_box_y + quest_box_h - 10: break
                 cv2.putText(frame, line, (quest_box_x + 10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1)
 
+            # Draw EXP Bar below quest box
+            exp_bar_y = quest_box_y + quest_box_h + 10
+            exp_bar_x = quest_box_x
+            draw_exp_bar(frame, exp_bar_x, exp_bar_y, current_exp, max_exp_for_level, current_level, scale=0.9)
+
             # Regenerate sidequest only after success box has shown for 5 seconds
             import time
             if quest_result_overlay['show'] and quest_result_overlay['success'] and quest_result_overlay['quest'] == sidequest:
                 elapsed = time.time() - quest_result_overlay['timestamp']
                 if elapsed >= 5.0:
+                    # Award EXP for side quest completion
+                    current_exp += sidequest_exp
+                    print(f"[EXP] +{sidequest_exp} EXP! (Side Quest) Total: {current_exp}/{max_exp_for_level}")
+                    # Handle leveling up
+                    while current_exp >= max_exp_for_level:
+                        current_exp -= max_exp_for_level
+                        current_level += 1
+                        max_exp_for_level += 20
+                        print(f"[LEVEL UP] Level {current_level}! Max EXP for next level: {max_exp_for_level}")
+                    # Pick a new side quest
                     sidequest = random.choice([q for q in QUEST_POOL if q != sidequest])
+                    sidequest_exp = QUEST_EXP.get(sidequest, 30)
                     quest_result_overlay['show'] = False
 
             # Main quest completion logic
@@ -958,15 +1025,27 @@ def main():
                     main_quest_cooldown_start = time.time()
                     prev_main_quest = q
                     MAIN_QUEST = ""
+                    # Award EXP for quest completion
+                    current_exp += main_quest_exp
+                    print(f"[EXP] +{main_quest_exp} EXP! Total: {current_exp}/{max_exp_for_level}")
+                    # Handle leveling up
+                    while current_exp >= max_exp_for_level:
+                        current_exp -= max_exp_for_level
+                        current_level += 1
+                        max_exp_for_level += 20
+                        print(f"[LEVEL UP] Level {current_level}! Max EXP for next level: {max_exp_for_level}")
 
             if main_quest_cooldown:
                 elapsed_cooldown = time.time() - main_quest_cooldown_start
                 if elapsed_cooldown >= 30.0:
-                    q_new, new_main_quest = generate_mainquest()
-                    if q_new == q:
+                    q_new, new_main_quest, new_exp = generate_mainquest()
+                    if q_new == q or q_new is None:
                         MAIN_QUEST = "Find the Porcelain Throne"
+                        main_quest_exp = 50
                     else:
                         MAIN_QUEST = new_main_quest
+                        main_quest_exp = new_exp
+                    q = q_new
                     main_quest_cooldown = False
 
             # Update quest_log_regions for click detection (main and side quest clickable areas)
