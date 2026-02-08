@@ -262,9 +262,9 @@ def mouse_callback(event, x, y, flags, param):
                         return
                     person_crop = latest_frame[cy1:cy2, cx1:cx2].copy()
                     if person_crop.size > 0:
-                        card_width = 900
-                        card_height = 800
-                        text_area_height = 200
+                        card_width = 1000
+                        card_height = 850
+                        text_area_height = 250
                         img_area_height = card_height - text_area_height
                         img_h, img_w = person_crop.shape[:2]
                         scale = min(card_width / img_w, img_area_height / img_h)
@@ -280,17 +280,126 @@ def mouse_callback(event, x, y, flags, param):
                                     cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 215, 255), 2)
                         cv2.putText(card, title.strip(), (20, text_y + 40),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (150, 150, 150), 1)
-                        desc_lines = textwrap.wrap(desc, width=80)  # Adjust width for card
-                        max_lines = 5  # Limit lines to fit in text area
+                        desc_lines = textwrap.wrap(desc, width=80)
+                        max_lines = 5
                         desc_lines = desc_lines[:max_lines]
                         draw_text_box(card, desc_lines, 20, text_y + 80)
+                        # Draw chat button
+                        button_x = card_width - 180
+                        button_y = text_y + 60
+                        button_w = 140
+                        button_h = 50
+                        cv2.rectangle(card, (button_x, button_y), (button_x+button_w, button_y+button_h), (0, 215, 255), -1)
+                        cv2.putText(card, "Press C to chat", (button_x+5, button_y+35), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
                         window_name = f"Card: {track_id}"
                         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
                         cv2.resizeWindow(window_name, card_width, card_height)
                         cv2.imshow(window_name, card)
                         cv2.waitKey(1)
                         print(f"   -> Opened Card for ID: {track_id}")
-                        break  # Stop after showing the card for the first valid match
+
+                        # Wait for chat button click
+                        while True:
+                            key = cv2.waitKey(1)
+                            if key == ord('q'):
+                                cv2.destroyWindow(window_name)
+                                break
+                            # Mouse callback for chat button
+                            if key == ord('c'):
+                                # Open chat window
+                                cv2.destroyWindow(window_name)
+                                chat_width = 1200
+                                chat_height = 1200
+                                chat_img = np.zeros((chat_height, chat_width, 3), dtype=np.uint8)
+                                # Show character photo
+                                photo_scale = min(350 / img_w, 350 / img_h)
+                                photo_w = int(img_w * photo_scale)
+                                photo_h = int(img_h * photo_scale)
+                                photo_resized = cv2.resize(person_crop, (photo_w, photo_h))
+                                chat_img[20:20+photo_h, 20:20+photo_w] = photo_resized
+                                # Display unique title
+                                cv2.putText(chat_img, f"{unique_title}", (400, 60), cv2.FONT_HERSHEY_TRIPLEX, 1.2, (0,215,255), 3)
+                                # Chat instructions
+                                cv2.putText(chat_img, "Press 'u' to type, 'q' to quit, Up/Down to scroll", (400, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200,200,200), 2)
+                                # Chat history
+                                chat_history = []
+                                # Run clear_messages and init_convo
+                                clear_messages()
+                                init_convo(title, hp, mana, unique_title, desc)
+                                # AI greets user
+                                ai_greeting = "Hello, traveler! How may I assist you today?"
+                                chat_history.append(("AI", ai_greeting))
+                                # Draw chat window
+                                chat_win = f"Chat: {track_id}"
+                                cv2.namedWindow(chat_win, cv2.WINDOW_NORMAL)
+                                cv2.resizeWindow(chat_win, chat_width, chat_height)
+                                scroll_offset = 0
+                                max_visible_lines = 18
+                                while True:
+                                    chat_img_display = chat_img.copy()
+                                    # Redraw unique title and instructions
+                                    cv2.putText(chat_img_display, f"{unique_title}", (400, 60), cv2.FONT_HERSHEY_TRIPLEX, 1.2, (0,215,255), 3)
+                                    cv2.putText(chat_img_display, "Press 'u' to type, 'q' to quit, Up/Down to scroll", (400, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200,200,200), 2)
+                                    # Draw chat history with wrapping
+                                    y_chat = 400
+                                    wrapped_lines = []
+                                    for sender, msg in chat_history:
+                                        color = (0,215,255) if sender=="AI" else (255,255,255)
+                                        if sender == "AI":
+                                            prefix = f"{title}: "
+                                        elif sender == "You":
+                                            prefix = "You: "
+                                        else:
+                                            prefix = f"{sender}: "
+                                        wrap_width = 60
+                                        lines = textwrap.wrap(msg, width=wrap_width)
+                                        if lines:
+                                            wrapped_lines.append((color, prefix + lines[0]))
+                                            for l in lines[1:]:
+                                                wrapped_lines.append((color, "    " + l))
+                                        else:
+                                            wrapped_lines.append((color, prefix))
+                                    # Scroll logic
+                                    total_lines = len(wrapped_lines)
+                                    start_line = max(0, total_lines - max_visible_lines - scroll_offset)
+                                    end_line = total_lines - scroll_offset
+                                    visible_lines = wrapped_lines[start_line:end_line]
+                                    for color, line in visible_lines:
+                                        cv2.putText(chat_img_display, line, (30, y_chat), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+                                        y_chat += 45
+                                    # Draw scrollbar
+                                    if total_lines > max_visible_lines:
+                                        bar_h = int((max_visible_lines/total_lines) * (chat_height-400-40))
+                                        bar_y = 400 + int((start_line/total_lines) * (chat_height-400-40))
+                                        cv2.rectangle(chat_img_display, (chat_width-40, bar_y), (chat_width-20, bar_y+bar_h), (180,180,180), -1)
+                                    cv2.imshow(chat_win, chat_img_display)
+                                    key2 = cv2.waitKey(30)
+                                    if key2 == ord('q'):
+                                        cv2.destroyWindow(chat_win)
+                                        break
+                                    # Scroll up
+                                    if key2 == 2490368: # up arrow
+                                        if scroll_offset + 1 <= total_lines - max_visible_lines:
+                                            scroll_offset += 1
+                                    # Scroll down
+                                    if key2 == 2621440: # down arrow
+                                        if scroll_offset > 0:
+                                            scroll_offset -= 1
+                                    # Allow user to type custom input
+                                    if key2 == ord('u'):
+                                        import tkinter as tk
+                                        from tkinter import simpledialog
+                                        root = tk.Tk()
+                                        root.withdraw()
+                                        user_msg = simpledialog.askstring("Chat Input", "Enter your message:")
+                                        root.destroy()
+                                        if user_msg:
+                                            chat_history.append(("You", user_msg))
+                                            # Send to AI and get response
+                                            ai_response = message(user_msg)
+                                            chat_history.append(("AI", ai_response))
+                                            scroll_offset = 0
+                                break
                 return # Stop checking after finding the first match
 
 
@@ -867,7 +976,7 @@ def main():
 
 
             # Draw Quest Log in top right (with text wrapping)
-            import textwrap
+            # import textwrap
             quest_box_w = 220
             quest_box_h = 80
             quest_box_x = frame.shape[1] - quest_box_w - 10
