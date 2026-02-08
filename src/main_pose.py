@@ -17,20 +17,22 @@ except Exception:
     yaml = None
 
 client = OpenAI(
-    api_key="rah rah rah ah ah ro ma ro ma ma", 
+    api_key="rc_b4df6774a92819b35ccb07a5ac80134dfe40ba6f67582859cf0b406e383fe31b", 
     base_url="https://api.featherless.ai/v1"
 )
 
 def generate_mainquest():
    q = check_quest_reminder()
-   prompt = f"Here is a task I have to do: {q}. Please make it sound like a medieval quest. No more than 5 words, hard limit. Don't actually use the word quest in the response."
+   print(q)
+   prompt = f"Here is a task I have to do: {q}. Please make it sound like a medieval quest. No more than 5 words, hard limit. Don't actually use the word quest in the response. The receiver should easily be able to recognize what the task is."
+   print(prompt)
    response = client.chat.completions.create(
    model="meta-llama/Meta-Llama-3.1-8B-Instruct",
    messages=[
    {"role": "user", "content": prompt}
    ]
    )
-   return response.choices[0].message.content
+   return q, response.choices[0].message.content
 
 def encode_image_to_base64(image_path):
     """Encode a local image file to base64 string."""
@@ -476,7 +478,7 @@ def main():
         "Take a group photo",
         "Make a new friend"
         ]
-    MAIN_QUEST = generate_mainquest()
+    q, MAIN_QUEST = generate_mainquest()
     sidequest = random.choice(QUEST_POOL)
 
     # Initialize quest_log_regions before main loop to avoid empty region on first click
@@ -864,7 +866,7 @@ def main():
             # Main quest region (top half)
             main_quest_y1 = quest_box_y + 18
             main_quest_y2 = quest_box_y + 48
-            quest_log_regions.append((quest_box_x, main_quest_y1, quest_box_x + quest_box_w, main_quest_y2, 'main', MAIN_QUEST))
+            quest_log_regions.append((quest_box_x, main_quest_y1, quest_box_x + quest_box_w, main_quest_y2, 'main', q))
             # Side quest region (bottom half)
             side_quest_y1 = quest_box_y + 52
             side_quest_y2 = quest_box_y + quest_box_h
