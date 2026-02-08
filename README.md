@@ -62,7 +62,7 @@ This project is a real-time RPG-themed webcam application for DevFest2026. It co
 ## AI Chat System
 - Each character card has a chat button.
 - Chat window allows roleplay conversation with the AI, using character stats and description.
-- Chat history is scrollable, and instructions are shown in the UI.
+- Instructions are shown in the UI.
 - Color-coded bounding boxes and labels
 
 
