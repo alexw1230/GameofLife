@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 
 
-def check_quest_reminder(filename="quests.txt"):
+def check_quest_reminder(filename="src/quests.txt"): #might have to change this path when running the program
     now = datetime.now()
 
     with open(filename, "r") as file:
