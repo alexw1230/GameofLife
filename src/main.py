@@ -65,7 +65,6 @@ def check_quest_complete(image_path,quest):
         data_url = f"data:image/webp;base64,{base64_image}"
     else:
         data_url = f"data:image/jpeg;base64,{base64_image}"# Default to JPEG
-
     response = client.chat.completions.create(
         model="google/gemma-3-27b-it",
         messages=[
@@ -86,7 +85,7 @@ def check_quest_complete(image_path,quest):
             }
         ]
     )
-
+    print(response.choices[0].message.content)
     return response.choices[0].message.content == "true"
 
 
@@ -200,8 +199,11 @@ def mouse_callback(event, x, y, flags, param):
                     cv2.imwrite(screenshot_path, latest_frame)
                     # Call check_quest_complete
                     try:
-                        q = check_quest_reminder()
-                        result = check_quest_complete(screenshot_path, q)
+                        if quest_type == 'main':
+                            q = check_quest_reminder()
+                            result = check_quest_complete(screenshot_path, q)
+                        else:
+                            result = check_quest_complete(screenshot_path, quest_text)
                     except Exception as e:
                         print(f"Quest check error: {e}")
                         result = False
@@ -491,7 +493,7 @@ def main():
         "Eat a snack",
         "Ask a mentor for help",
         "Take a group photo",
-        "Make a friend"
+        "Drink something"
         ]
     q, MAIN_QUEST = generate_mainquest()
     prev_main_quest = MAIN_QUEST
